@@ -1,0 +1,15 @@
+﻿Begin
+2Thou wast verily fortunate to triumph during our last battle, Vulpes. This time, thou shalt bend the knee!
+1 Vulpes advanced to the Feudal Age.
+22 Roger Bosso advanced to the Feudal Age.
+33 Indravarman III advanced to the Feudal Age.
+1 Vulpes advanced to the Castle Age.
+22 Roger Bosso advanced to the Castle Age.
+33 Indravarman III advanced to the Castle Age.
+1 Vulpes advanced to the Imperial Age.
+22 Roger Bosso advanced to the Imperial Age.
+33 Indravarman III advanced to the Imperial Age.
+3Alas, I could find naught but fools gold.
+3No wonder thou wert victorious! I shalt abdicate.
+2All my beginning citizenry were male.
+2No wonder thou wert victorious! I shalt abdicate.

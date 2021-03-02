@@ -1,0 +1,1 @@
+powershell.exe ./spec_chat_player.ps1
