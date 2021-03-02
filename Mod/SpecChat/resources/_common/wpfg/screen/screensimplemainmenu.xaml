@@ -1,0 +1,228 @@
+﻿<local:Age2ScreenSimpleMainMenu x:Name="Page" d:DesignHeight="2160" d:DesignWidth="3840" mc:Ignorable="d" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:d="http://schemas.microsoft.com/expression/blend/2008" xmlns:local="clr-namespace:aoe2wpfg" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+   <Page.Resources>
+      <ResourceDictionary>
+
+         <!--mixerLogo-->
+         <Style x:Key="ButtonMixerLarge" BasedOn="{StaticResource ButtonLarge}" TargetType="local:Age2Button">
+            <Setter Property="NormalBrush" Value="{StaticResource button_mixer_normal}"/>
+            <Setter Property="HoverBrush" Value="{StaticResource button_mixer_hover}"/>
+            <Setter Property="ActiveBrush" Value="{StaticResource button_mixer_active}"/>
+            <Setter Property="DisabledBrush" Value="{StaticResource button_mixer_disable}"/>
+            <Setter Property="ForegroundBrush" Value="Transparent"/>
+
+            <Setter Property="Template">
+               <Setter.Value>
+                  <ControlTemplate TargetType="Button">
+                     <Border Name="Border" 
+                        BorderBrush="{StaticResource ControlBorderBrush}"
+                        BorderThickness="3"
+                        >
+                        <Grid>
+                           <Rectangle x:Name="Background" Fill="{Binding Path=NormalBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+                           <Rectangle Width="180" Height="56" Fill="{StaticResource mixerLogo}" Effect="{StaticResource ControlDropShadow}" />
+
+                           <Rectangle x:Name="Foreground" Fill="{Binding Path=ForegroundBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+
+                        </Grid>
+                     </Border>
+
+                     <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                           <Setter TargetName="Background" Property="Fill" Value="{Binding Path=HoverBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                           <Setter TargetName="Background" Property="Fill" Value="{Binding Path=ActiveBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                           <Setter TargetName="Background" Property="Fill" Value="{Binding Path=DisabledBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+                           <Setter TargetName="Border" Property="BorderBrush" Value="{StaticResource ControlBorderDisabledBrush}"/>
+                        </Trigger>
+                        <MultiTrigger>
+                           <MultiTrigger.Conditions>
+                              <Condition Property="IsFocused" Value="True"/>
+                              <Condition Property="IsMouseCaptured" Value="False"/>
+                           </MultiTrigger.Conditions>
+                           <Setter TargetName="Background" Property="Fill" Value="{Binding Path=HoverBrush, RelativeSource={RelativeSource TemplatedParent}}"/>
+                        </MultiTrigger>
+                     </ControlTemplate.Triggers>
+                  </ControlTemplate>
+               </Setter.Value>
+            </Setter>
+         </Style>
+
+      </ResourceDictionary>
+   </Page.Resources>
+
+   <Canvas Width="3840" Height="2160" Background="Transparent">
+      <Canvas Width="1000" Height="2160" Canvas.Left="235" Background="Transparent">
+         <Canvas.Effect>
+            <local:Age2BlurEffect
+               BlurMask ="{StaticResource ribbon00_BBAA_blurmask}"
+               SwipeLow="{Binding ElementName=Page,Path=SwipeLow}" 
+               SwipeHigh="{Binding ElementName=Page,Path=SwipeHigh}"
+               PixelTop="0"
+               PixelLeft="235"
+               PixelWidth="1000"
+               PixelHeight="2160"
+               P1="40,0"
+               P2="40,0"
+               TextureSize="128,128"
+               ScreenWidth="{Binding ElementName=Page, Path=ActualWidth}"
+               ScreenHeight="{Binding ElementName=Page, Path=ActualHeight}"
+                  />
+         </Canvas.Effect>
+      </Canvas>
+
+      <Canvas Width="3840" Height="2160" Background="Transparent">
+         <Canvas.Effect>
+            <local:Age2SwipeEffect
+               SwipeLow="{Binding ElementName=Page,Path=SwipeLow}" 
+               SwipeHigh="{Binding ElementName=Page,Path=SwipeHigh}"
+               PixelWidth="3840"
+               PixelHeight="2160"
+               ScreenWidth="{Binding ElementName=Page, Path=ActualWidth}"
+               ScreenHeight="{Binding ElementName=Page, Path=ActualHeight}"
+               />
+         </Canvas.Effect>
+
+         <!--the ribbon-->
+         <Canvas Width="1000" Height="2160" Canvas.Left="235" Background="Transparent" x:Name="RibbonCanvas">
+            <Rectangle Fill="Transparent" x:Name="ribbon" Width="1000" Height="2160">
+               <Rectangle.Effect>
+                  <local:Age2NineSliceShinyEffect
+                           NineSliceTexture="{StaticResource ribbon00_BBAA}"
+                           ShinyMaskTexture="{StaticResource ribbon00_BBAA_blurmask}"
+                           P1="40,0"
+                           P2="40,0"
+                           TextureSize="128,128"
+                           PixelWidth="{Binding ElementName=ribbon, Path=ActualWidth}"
+                           PixelHeight="{Binding ElementName=ribbon, Path=ActualHeight}"
+                           PeriodicTimer="{Binding ElementName=Page, Path=PeriodicTimer}"
+                           PixelTop="0"
+                           PixelLeft="235"
+                           ScreenWidth="{Binding ElementName=Page, Path=ActualWidth}"
+                           ScreenHeight="{Binding ElementName=Page, Path=ActualHeight}"
+                           ShaderOpacity="1.0"
+                           >
+                  </local:Age2NineSliceShinyEffect>
+               </Rectangle.Effect>
+            </Rectangle>
+
+            <StackPanel Width="1000" Height="2160" >
+               <Rectangle Fill="Transparent" Margin="0,16,0,0" Width="518" Height="367">
+                  <Rectangle.Effect>
+                     <local:Age2NineSliceShinyEffect
+                           NineSliceTexture="{StaticResource aoe_logo}"
+                           ShinyMaskTexture="{StaticResource aoe_logo}"
+                           P1="0,0"
+                           P2="0,0"
+                           TextureSize="518,367"
+                           PixelWidth="518"
+                           PixelHeight="367"
+                           PeriodicTimer="{Binding ElementName=Page, Path=PeriodicTimer}"
+                           PixelTop="260"
+                           PixelLeft="36"
+                           ScreenWidth="{Binding ElementName=Page, Path=ActualWidth}"
+                           ScreenHeight="{Binding ElementName=Page, Path=ActualHeight}"
+                           ShaderOpacity="1.0"
+                           />
+                  </Rectangle.Effect>
+               </Rectangle>
+               <Grid Margin="0,40,0,40">
+                  <local:Age2Button Width="610" Height="315" Style="{StaticResource ButtonImageMix}" HelpLocale="IDS_SINGLE_PLAYER" TextLocale="9202" TestKey="Background/ButtonSingleplayer"  x:Name="ButtonSingleplayerDialog"   ImageString="/resources/simplemainmenu/button_image_singleplayer.png"/>
+                  <local:Age2Button Width="610" Height="315" Style="{StaticResource ButtonImageMix}" HelpLocale="IDS_XBOX_SIGNIN_POPUP_MESSAGE" TextLocale="9202" TestKey="Background/ButtonSingleplayerDisabled"  x:Name="ButtonSingleplayerDisabled" ImageString="/resources/simplemainmenu/button_image_singleplayer.png" ForegroundBrush="{StaticResource button_player_icon_disable}"/>
+               </Grid>
+
+               <Grid Margin="0,0,0,40">
+                  <local:Age2Button Width="610" Height="315" Style="{StaticResource ButtonImageMix}" HelpLocale="99203"                          TextLocale="9203" TestKey="Background/ButtonMultiplayer"  x:Name="ButtonMultiplayer"         ImageString="/resources/simplemainmenu/button_image_multiplayer.png"/>
+                  <local:Age2Button Width="610" Height="315" Style="{StaticResource ButtonImageMix}" HelpLocale="IDS_XBOX_SIGNIN_POPUP_MESSAGE" TextLocale="9203" TestKey="Background/ButtonMultiplayerDisabled"  x:Name="ButtonMultiplayerDisabled" ImageString="/resources/simplemainmenu/button_image_multiplayer.png" ForegroundBrush="{StaticResource button_player_icon_disable}"/>
+                  <local:Age2Image  Width="{Binding ElementName=ButtonMultiplayer, Path=ActualWidth}" Height="{Binding ElementName=ButtonMultiplayer, Path=ActualHeight}" Stretch="Fill" Source="/resources/empty.png" Focusable="True" KeyboardNavigation.IsTabStop="False" x:Name="ButtonMultiplayerTooltip" HelpLocale="IDS_MULTIPLAYER_MAINTENANCE_HELP_TEXT" TextLocale="9203" Visibility="Visible"/>
+               </Grid>
+               
+               <local:Age2Button Width="610" Height="230" Style="{StaticResource ButtonImageMix}" HelpLocale="IDS_LEARN_TO_PLAY_TOOLTIP" TextLocale="9503" TestKey="Background/ButtonLearn"        x:Name="ButtonLearnDialog"        Margin="0,0,0,80" ImageString="/resources/simplemainmenu/button_image_learntoplay.png"/>
+               <local:Age2Button Width="610" Height="230" Style="{StaticResource ButtonImageMix}" HelpLocale="IDS_LEARN_TO_PLAY_TOOLTIP" TextLocale="9503" TestKey="Background/ButtonLearnDisabled"        x:Name="ButtonLearnDialogDisabled"        Margin="0,0,0,80" ImageString="/resources/simplemainmenu/button_image_learntoplay.png"/>
+
+               <StackPanel Width="754" Height="250" >
+                  <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Margin="0,10,0,10">
+                     <Run Text="Spec Chat:"/>
+                  </local:Age2TextBlock>
+
+                  <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Margin="0,10,0,10">
+                     <local:Age2Hyperlink NavigateUri="www.michael-zappe.de">
+                        How to Install
+                     </local:Age2Hyperlink>
+                  </local:Age2TextBlock>
+
+                  <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Margin="0,10,0,10">
+                     <local:Age2Hyperlink NavigateUri="cmd">
+                        Start Background program
+                     </local:Age2Hyperlink>
+                  </local:Age2TextBlock>
+               </StackPanel>
+
+               <Rectangle Fill="{StaticResource mainmenu_hr}" Margin="0,0,0,25" Width="544" Height="96"/>
+
+               <Grid Margin="0,0,0,40">
+                  <local:Age2Button Width="750" Height="76" TextLocale="9255" HelpLocale="99255"                          Style="{StaticResource ButtonLarge}" TestKey="Background/ButtonNews"  x:Name="ButtonNews"/>
+                  <local:Age2Button Width="760" Height="76" TextLocale="9255" HelpLocale="IDS_XBOX_SIGNIN_POPUP_MESSAGE" Style="{StaticResource ButtonLarge}" TestKey="Background/ButtonNewsDisabled"  x:Name="ButtonNewsDisabled" ForegroundBrush="{StaticResource button_player_icon_disable}"/>
+               </Grid>
+               <Grid Margin="0,0,0,40">
+                <!--  <local:Age2Button Width="760" Height="76" TextLocale="170410" HelpLocale="99278"                          Style="{StaticResource ButtonMixerLarge}" TestKey="Background/ButtonMixer" x:Name="ButtonMixer"/>
+                  <local:Age2Button Width="760" Height="76" TextLocale="170410" HelpLocale="IDS_XBOX_SIGNIN_POPUP_MESSAGE" Style="{StaticResource ButtonMixerLarge}" TestKey="Background/ButtonMixer" x:Name="ButtonMixerDisabled" ForegroundBrush="{StaticResource button_player_icon_disable}"/>-->
+               </Grid>
+               <local:Age2Button Width="760" Height="76" TextLocale="9207"    HelpLocale="99207" Style="{StaticResource ButtonLarge}"      TestKey="Background/ButtonExit"  x:Name="ButtonExit" />
+
+            </StackPanel>
+
+         </Canvas>
+
+         <!--the login button-->
+         <local:Age2Frame x:Name="PanelPlayerLogin" Focusable="False" Height="2160" Width="3840" Source=".\..\panel\panelplayerlogin.xaml" />
+
+         <!--the events panel-->
+         <local:Age2Frame x:Name="PanelEvents" Focusable="False" Height="2160" Width="3840" Source=".\..\panel\panelevents.xaml" />
+
+         <Grid Width="3840" Height="2160">
+            <local:Age2Button x:Name="ButtonPurchase" Width="1000" Height="185" Margin="0,20,0,0" Style="{StaticResource ButtonImage}" HorizontalAlignment="Center" VerticalAlignment="Top" HelpLocale="IDS_PURCHASE_GAME_TOOLTIP">
+               <Grid>
+                  <Image Source="/resources/simplemainmenu/button_purchase.png" />
+
+                  <Grid Effect="{StaticResource ControlDropShadow}" Background="Transparent">
+                     <Grid.RowDefinitions>
+                        <RowDefinition Height="4*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="3*"/>
+                     </Grid.RowDefinitions>
+
+                     <local:Age2TextBlock 
+                        Grid.Row="1"
+                        Width="600"
+                        x:Name="textblock"
+                        HorizontalAlignment="Center" 
+                        VerticalAlignment="Bottom" 
+                        TextLocale="IDS_PURCHASE_GAME_BUTTON"
+                        Style="{StaticResource TextBlockButtonBig}"
+                        Foreground="{StaticResource ButtonForegroundBrush}"
+                        TextWrapping="Wrap"
+                        TextAlignment="Center"
+                           />
+                  </Grid>
+               </Grid>
+            </local:Age2Button>
+         </Grid>
+
+         <!--textblocks build and debug-->
+         <local:Age2TextBlockDynamic Foreground="#000000" Canvas.Left="2990" Canvas.Top="183" Height="300" Width="840" x:Name="RLModeLabel"/>
+         <local:Age2TextBlockDynamic Foreground="#000000" Canvas.Left="1214" Canvas.Top="10" Height="718" Width="1336" x:Name="DebugTextLabel" Visibility="Hidden" TextWrapping="Wrap" TextAlignment="Center" />
+         <local:Age2TextBlockDynamic Foreground="#FFFFFF" Canvas.Left="1170" Canvas.Top="2060" FontWeight="Bold" Effect="{StaticResource ControlDropShadow}" Height="60" Width="1500" x:Name="BuildLabel" TextAlignment="Center" />
+         <local:Age2TextBlockDynamic Foreground="#FFFFFF" Canvas.Left="1170" Canvas.Top="2000" FontWeight="Bold" Effect="{StaticResource ControlDropShadow}"  Height="60" Width="1500" x:Name="BuildLabel2" TextAlignment="Center"/>
+         <local:Age2TextBlockDynamic Foreground="#000000" Canvas.Left="2850" Canvas.Top="1900" Height="300" Width="1000"  x:Name="BetaBuildLabel" Visibility="Hidden"/>
+         <local:Age2TextBlockDynamic Foreground="#DE0202" Canvas.Left="1320" FontWeight="Bold" Canvas.Top="1940" Height="60" Width="1500" x:Name="TamperingLabel" TextAlignment="Center" Effect="{StaticResource ControlDropShadow}"/>
+         <Border Background="#80000000" Canvas.Left="2525" Canvas.Top="1750" Height="400" Width="1300" x:Name="BetaDisclaimerTextBox" Effect="{StaticResource ControlDropShadowBig}"  Visibility="Hidden">
+            <local:Age2TextBlock Margin="16" Foreground="#FFFFFF" Style="{StaticResource TextBlockFontBMed}" FontWeight="Bold" TextWrapping="Wrap" TextAlignment="Left" TextLocale="IDS_BETA_DISCLAIMER_MESSAGE" />
+         </Border>
+
+      </Canvas>
+   </Canvas>
+
+</local:Age2ScreenSimpleMainMenu>
