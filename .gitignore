@@ -349,5 +349,14 @@ MigrationBackup/
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
 
+
 # SpecChat
 ./SpecChat/backups
+
+
+# CMAKE
+CMakeFiles/
+Makefile
+*.cmake
+CMakeCache.txt
+Server/build/
