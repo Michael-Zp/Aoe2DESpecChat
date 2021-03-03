@@ -155,7 +155,13 @@
 
                   <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Margin="0,10,0,10">
                      <local:Age2Hyperlink NavigateUri="cmd">
-                        Start Background program
+                        Start Player  
+                     </local:Age2Hyperlink>
+                     <local:Age2Hyperlink NavigateUri="cmd">
+                        Start Caster  
+                     </local:Age2Hyperlink>
+                     <local:Age2Hyperlink NavigateUri="cmd">
+                        Start Caster GUI  
                      </local:Age2Hyperlink>
                   </local:Age2TextBlock>
                </StackPanel>

@@ -1,5 +1,7 @@
 ﻿$tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
 $tcpStream = $tcpConnection.GetStream()
+$writer = New-Object System.IO.StreamWriter($tcpStream)
+$writer.AutoFlush = $true
 $reader = New-Object System.IO.StreamReader($tcpStream)
 
 $debug = $false
@@ -17,6 +19,8 @@ if(Test-Path "./currentChat.txt")
 {
     Move-Item "./currentChat.txt" "./backups/$chatBackupFile" | Out-Null
 }
+
+$writer.WriteLine("KeyTest")
 
 while($run)
 {
