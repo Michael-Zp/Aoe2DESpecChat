@@ -5,10 +5,16 @@ $writer.AutoFlush = $true
 
 $debug = $false
 
+$writer.WriteLine("KeyTest")
+
 $jobCode = {
-    param($writer)
+    param($writer, $debug)
     
-    #Write-Host "Begin"
+    if($debug)
+    {
+        Write-Host "Begin"
+    }
+    
     $writer.WriteLine("Begin")
 
     $global:lastPositionInFile = 0
@@ -53,7 +59,10 @@ $jobCode = {
                             $playerNumber = $Matches[1]
                             $line = "$playerNumber$($Matches[2])"
                     
-                            #Write-Host $line
+                            if($debug)
+                            {
+                                Write-Host "Send Line: $line"
+                            }
                             $writer.WriteLine($line)
                         }
                     }
@@ -76,10 +85,10 @@ $jobCode = {
 }
 
 $p = [PowerShell]::Create()
-$null = $p.AddScript($jobCode).AddArgument($writer)
+$null = $p.AddScript($jobCode).AddArgument($writer).AddArgument($debug)
 $p.BeginInvoke() | Out-Null
 
-#Invoke-Command -ScriptBlock $jobCode
+#Invoke-Command -ScriptBlock $jobCode -ArgumentList $writer, $debug
 
 while($true)
 {
@@ -94,7 +103,7 @@ $writer.WriteLine("KillMe")
 
 $p.Stop()
 $p.Dispose()
-#$p.EndInvoke($job)
+$p.EndInvoke($job)
 
 
 $writer.Close()
