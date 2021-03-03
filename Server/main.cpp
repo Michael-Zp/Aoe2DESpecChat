@@ -16,8 +16,16 @@
 #include <map>
 #include <chrono>
 #include <mutex>
+#include <optional>
+#include <array>
 
 #define DEBUG_OUTPUT 1
+
+static const int BUF_SIZE = 1024;
+
+typedef std::array<char, 128> MyKey;
+
+static_assert(BUF_SIZE >= sizeof(MyKey) + 3, "Key + protocol overhead can not be bigger than a BUF_SIZE");
 
 struct ClientThread
 {
@@ -25,97 +33,165 @@ struct ClientThread
     bool* Done;
 };
 
-
-void managePlayerConnection(std::shared_ptr<std::map<std::string, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int playerConnection, bool* done)
+std::optional<MyKey> getKey(char *buf)
 {
-    static const int SIZE = 1024;
-    static const int HEADER_SIZE = 128;
-    static_assert(SIZE >= HEADER_SIZE, "Buffer size is smaller than header size");
-    char buf[SIZE];
+   if(strncmp(buf, "Key", 3) == 0)
+   {
+	MyKey ret;
+	memcpy(&ret, buf + 3, sizeof(MyKey));
+	return ret;
+   }
+   return {};
+}
+
+bool isKillMessage(char *buf)
+{
+   return strncmp(buf, "KillMe", 6) == 0;
+}
+
+void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int playerConnection, bool* done)
+{
+    char buf[BUF_SIZE];
     int readBytes;
 
-    readBytes = read(playerConnection, buf, HEADER_SIZE - 1);
-    buf[HEADER_SIZE] = '\0';
-
-    auto key = std::string(buf);
-
-    if(DEBUG_OUTPUT)
-	std::cout << "Player with key: " << key << " connected." << std::endl;
-
-    auto& outputPair = (*headerToOutput)[key];
-    auto& mtx = outputPair.first;
-    auto& outputVector = outputPair.second;
+    bool hasKey = false;
+    MyKey key;
 
     while(!*done)
     {
-        readBytes = read(playerConnection, buf, SIZE - 1);
+        readBytes = read(playerConnection, buf, BUF_SIZE - 1);
 
-        buf[readBytes] = '\0';
-        if(strncmp(buf, "KillMe", 6) == 0)
-        {
-            int n = sprintf(buf, "%s\0", "KillMe");
-	    mtx.lock();
-	    outputVector.push_back(std::string(buf));
-	    mtx.unlock();
-            *done = true;
-            break;
-        }
+	if(DEBUG_OUTPUT)
+	    std::cout << "Read player message" << std::endl;
 
-	mtx.lock();
-	outputVector.push_back(std::string(buf));
-	mtx.unlock();
+	buf[readBytes] = '\0';
+
+	auto possibleKey = getKey(buf);
+
+	if(possibleKey.has_value())
+	{
+	    if(DEBUG_OUTPUT)
+		std::cout << "Read player key" << std::endl;
+
+	    key = possibleKey.value();
+	    hasKey = true;
+
+	    if(DEBUG_OUTPUT)
+		std::cout << "Player with key: " << std::string(std::begin(key), std::end(key)) << " connected." << std::endl;
+
+	}
+
+	if(hasKey)
+	{
+	    auto outputPair = &(*headerToOutput)[key];
+	    auto mtx = &outputPair->first;
+	    auto outputVector = &outputPair->second;
+
+
+	    if(isKillMessage(buf))
+	    {
+	        int n = sprintf(buf, "%s\0", "KillMe");
+	        mtx->lock();
+	        outputVector->push_back(std::string(buf));
+	        mtx->unlock();
+	        *done = true;
+	        break;
+	    }
+
+	    mtx->lock();
+	    outputVector->push_back(std::string(buf));
+	    mtx->unlock();
+
+	}
     }
 
     close(playerConnection);
 }
 
-void manageCasterConnection(std::shared_ptr<std::map<std::string, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterConnection, bool* done)
+void casterSendLoop(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterConnection, MyKey& key, bool& run)
 {
-    static const int SIZE = 1024;
-    static const int HEADER_SIZE = 128;
-    static_assert(SIZE >= HEADER_SIZE, "Buffer size is smaller than header size");
-    char buf[SIZE];
+    while(run)
+    {
+        MyKey currentKey;
+        memcpy(&currentKey, &key, sizeof(MyKey));
+
+        auto outputPair = &(*headerToOutput)[currentKey];
+        auto mtx = &outputPair->first;
+        auto outputVector = &outputPair->second;
+
+        mtx->lock();
+        if(outputVector->size() > 0)
+        {
+            for(int i = 0; i < outputVector->size(); ++i)
+            {
+	        send(casterConnection, (*outputVector)[i].c_str(), (*outputVector)[i].size(), 0);
+            }
+            outputVector->clear();
+        }
+        mtx->unlock();
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+}
+
+void manageCasterConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterConnection, bool* done)
+{
+    char buf[BUF_SIZE];
     int readBytes;
 
-    readBytes = read(casterConnection, buf, HEADER_SIZE - 1);
-    buf[HEADER_SIZE] = '\0';
+    MyKey key;
+    bool run = true;
+    bool hasKey = false;
+    std::thread sendThread;
 
-    auto key = std::string(buf);
+    while(!hasKey)
+    {
+        readBytes = read(casterConnection, buf, BUF_SIZE - 1);
 
-    if(DEBUG_OUTPUT)
-	std::cout << "Caster with key: " << key << " connected." << std::endl;
+	buf[readBytes] = '\0';
 
-    auto& outputPair = (*headerToOutput)[key];
-    auto& mtx = outputPair.first;
-    auto& outputVector = outputPair.second;
+	auto possibleKey = getKey(buf);
+
+	if(possibleKey.has_value())
+	{
+	    key = possibleKey.value();
+	    hasKey = true;
+
+	    if(DEBUG_OUTPUT)
+		std::cout << "Caster with key: " << std::string(std::begin(key), std::end(key)) << " connected." << std::endl;
+
+	}
+
+	if(hasKey)
+        {
+	    sendThread = std::thread(casterSendLoop, headerToOutput, casterConnection, std::ref(key), std::ref(run));
+        }
+    }
 
     while(!*done)
     {
-	mtx.lock();
-	if(outputVector.size() > 0)
+	readBytes = read(casterConnection, buf, BUF_SIZE - 1);
+
+	buf[readBytes] = '\0';
+
+	auto possibleKey = getKey(buf);
+
+	if(possibleKey.has_value())
 	{
-	    for(int i = 0; i < outputVector.size(); ++i)
-	    {
-		if(outputVector[i] == "KillMe")
-		{
-		    send(casterConnection, outputVector[i].c_str(), outputVector[i].size(), 0);
-		    *done = true;
-		    break;
-		}
-		send(casterConnection, outputVector[i].c_str(), outputVector[i].size(), 0);
-	    }
-	    outputVector.clear();
+	    memcpy(&key, buf, sizeof(MyKey));
+	    if(DEBUG_OUTPUT)
+		std::cout << "Caster with key: " << std::string(std::begin(key), std::end(key)) << " connected." << std::endl;
 	}
-	mtx.unlock();
-	std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
+
+    run = false;
+    sendThread.join();
 
     close(casterConnection);
 }
 
 
 
-void waitForPlayers(std::shared_ptr<std::map<std::string, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int playerSocket)
+void waitForPlayers(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int playerSocket)
 {
     std::vector<ClientThread> playerThreads;
     while(true)
@@ -125,6 +201,7 @@ void waitForPlayers(std::shared_ptr<std::map<std::string, std::pair<std::mutex, 
             std::cout << "Player connected." << std::endl;
 
         bool *done = new bool;
+	*done = false;
         std::thread thread(managePlayerConnection, headerToOutput, playerConnection, done);
         playerThreads.push_back({std::move(thread), done});
 
@@ -138,7 +215,7 @@ void waitForPlayers(std::shared_ptr<std::map<std::string, std::pair<std::mutex, 
     }
 }
 
-void waitForCasters(std::shared_ptr<std::map<std::string, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterSocket)
+void waitForCasters(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterSocket)
 {
     std::vector<ClientThread> casterThreads;
     while(true)
@@ -148,6 +225,7 @@ void waitForCasters(std::shared_ptr<std::map<std::string, std::pair<std::mutex, 
             std::cout << "Caster connected." << std::endl;
 
         bool *done = new bool;
+	*done = false;
         std::thread thread(manageCasterConnection, headerToOutput, casterConnection, done);
         casterThreads.push_back({std::move(thread), done});
 
@@ -210,7 +288,7 @@ int main()
     bind(playerSocket, (struct sockaddr*)&ipOfServer , sizeof(ipOfServer));
     listen(playerSocket, 20);
 
-    auto headerToOutput = std::make_shared<std::map<std::string, std::pair<std::mutex, std::vector<std::string>>>>();
+    auto headerToOutput = std::make_shared<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>>();
 
     std::thread waitForPlayersThread(waitForPlayers, headerToOutput, playerSocket);
     std::thread waitForCastersThread(waitForCasters, headerToOutput, casterSocket);
