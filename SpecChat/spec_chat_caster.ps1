@@ -1,44 +1,27 @@
-﻿$debug = $true
+﻿$DebugPreference = "Continue"
 $test_run = $false
 
-$jobCode = {
-    Param($debug, $test_run)
+$PowerShell = [powershell]::Create()
 
-    if(-not $test_run)
-    {
-        $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
-        $tcpStream = $tcpConnection.GetStream()
-        $writer = New-Object System.IO.StreamWriter($tcpStream)
-        $writer.AutoFlush = $true
-        $reader = New-Object System.IO.StreamReader($tcpStream)
+$PowerShell.Streams.Debug.Add_DataAdded({
+    param(
+        [Parameter(Mandatory)][Object]$sender, 
+        [Parameter(Mandatory)][System.Management.Automation.DataAddedEventArgs]$e
+    );
 
-        $chatBackupFile = (Get-Date -Format "yyyyMMdd_hhmmss") + ".txt"
-        
-        $baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
-
-        if(-not (Test-Path $baseDirectory))
-        {
-            mkdir $baseDirectory | Out-Null
-        }
-
-        cd $baseDirectory
-
-        if(-not (Test-Path "./backups"))
-        {
-            mkdir "./backups" | Out-Null
-        }
-
-        if(Test-Path "./currentChat.txt")
-        {
-            Move-Item "./currentChat.txt" "./backups/$chatBackupFile" | Out-Null
-        }
+    $newRecord = $sender[$e.Index] -as 'System.Management.Automation.PSDataCollection[psobject]'
     
-        $key = "KeyTest"
-        $keyMessage = "$($key.Length);$key"
-        $writer.Write($keyMessage)
+    if(-not [System.String]::IsNullOrEmpty($newRecord.Item(0)))
+    {
+        Write-Debug $newRecord.Item(0)
     }
+})
 
 
+[void]$PowerShell.AddScript({
+    Param($writer, $reader, $baseDirectory, $pDebugPref, $test_run)
+    
+    $DebugPreference = $pDebugPref
 
 
     $maxNumLastMessages = 20
@@ -117,15 +100,14 @@ $jobCode = {
         }
         else
         {
-            $line = $reader.ReadLine()
+            $task = $reader.ReadLineAsync()
+            while (-not $task.AsyncWaitHandle.WaitOne(100)) { }
+            $line = $task.GetAwaiter().GetResult()
         }
 
         if($line.Length -gt 0)
         {
-            if($debug)
-            {
-                Write-Host $line
-            }
+            Write-Debug $line
 
             if(-not($line -match "\d+;\d+;.*"))
             {
@@ -194,7 +176,7 @@ $jobCode = {
                     $outLine = "$($lastMessages[$currentMessage].PlayerInGameNumber)$($lastMessages[$currentMessage].Text)"
                     try
                     {
-                        $outLine | Out-File -FilePath "./currentChat.txt" -Encoding utf8 -Append
+                        $outLine | Out-File -FilePath "$baseDirectory/currentChat.txt" -Encoding utf8 -Append
                         $lineWritten = $true
                     }
                     catch
@@ -209,12 +191,53 @@ $jobCode = {
             break;
         }
     }
+})
+
+if(-not $test_run)
+{
+    $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
+    $tcpStream = $tcpConnection.GetStream()
+    $writer = New-Object System.IO.StreamWriter($tcpStream)
+    $writer.AutoFlush = $true
+    $reader = New-Object System.IO.StreamReader($tcpStream)
+
+    $chatBackupFile = (Get-Date -Format "yyyyMMdd_hhmmss") + ".txt"
+        
+    $baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
+
+    if(-not (Test-Path $baseDirectory))
+    {
+        mkdir $baseDirectory | Out-Null
+    }
+
+    if(-not (Test-Path "$baseDirectory/backups"))
+    {
+        mkdir "$baseDirectory/backups" | Out-Null
+    }
+
+    if(Test-Path "$baseDirectory/currentChat.txt")
+    {
+        Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
+    }
+    
+    $key = "KeyTest"
+    $keyMessage = "$($key.Length);$key"
+    $writer.Write($keyMessage)
+    
+    [void]$PowerShell.AddArgument($writer)
+    [void]$PowerShell.AddArgument($reader)
 }
 
-$job = Start-Job -ScriptBlock $jobCode -ArgumentList $debug, $test_run
+[void]$PowerShell.AddArgument($baseDirectory)
+[void]$PowerShell.AddArgument($DebugPreference)
+[void]$PowerShell.AddArgument($test_run)
+
+$Handle = $PowerShell.BeginInvoke()
 
 while($true)
 {
+    Start-Sleep -Milliseconds 25
+        
     if ([System.Console]::KeyAvailable)
     {    
         $key = [System.Console]::ReadKey()
@@ -223,9 +246,13 @@ while($true)
             break;
         }
     }
-
-    Receive-Job -Job $job
-    Start-Sleep -Milliseconds 20
 }
 
-exit
+$PowerShell.Dispose()
+
+if(-not $test_run)
+{
+    $writer.Close()
+    $reader.Close()
+    $tcpConnection.Close()
+}
