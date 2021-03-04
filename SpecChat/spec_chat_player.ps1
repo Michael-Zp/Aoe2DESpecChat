@@ -3,48 +3,33 @@ $tcpStream = $tcpConnection.GetStream()
 $writer = New-Object System.IO.StreamWriter($tcpStream)
 $writer.AutoFlush = $true
 
-$debug = $false
+$debug = $true
 
-$writer.WriteLine("KeyTest")
+$key = "KeyTest"
+$keyMessage = "$($key.Length);$key"
+$writer.Write($keyMessage)
 
-$jobCode = {
-    param($writer, $debug)
-    
-    if($debug)
-    {
-        Write-Host "Begin"
-    }
-    
-    $writer.WriteLine("Begin")
+$run = $true
 
+while($run)
+{
     $global:lastPositionInFile = 0
 
     while($true)
     {
-        Start-Sleep -Milliseconds 500
         $InitDir = [Environment]::GetFolderPath('UserProfile') + "\Games\Age of Empires 2 DE"
         Get-ChildItem $InitDir | ForEach-Object { if($_.Name -match "\d\d+") { $profilePath = $_ } }
         $InitDir = $InitDir + "\$profilePath\savegame"
         $file = (Get-ChildItem $InitDir | Sort-Object LastWriteTime -Descending)[0].FullName
 
-        if($debug)
-        {
-            Write-Host $file
-        }
-
         if($file -ne "" -and (Test-Path $file))
-        {
-            if($debug)
-            {
-                $stopwatch =  [system.diagnostics.stopwatch]::StartNew()
-            }
-    
+        {    
             $tmpName = (New-TemporaryFile).FullName
 
             Copy-Item $file $tmpName
     
             $streamReader = New-Object System.IO.StreamReader($tmpName)
-            $streamReader.BaseStream.Seek($global:lastPositionInFile, 'Begin')
+            $streamReader.BaseStream.Seek($global:lastPositionInFile, 'Begin') | Out-Null
 
             while(($currentLine = $streamReader.ReadLine()) -ne $null)
             {
@@ -57,13 +42,15 @@ $jobCode = {
                         if($parts[$i] -match '"player":(\d+),"channel":\d+,"message":"(.*?)","messageAGP":".*?"}') 
                         { 
                             $playerNumber = $Matches[1]
-                            $line = "$playerNumber$($Matches[2])"
+                            $line = "$playerNumber;$($Matches[2])"
+                            $line = "$($line.Length);$line"
                     
                             if($debug)
                             {
                                 Write-Host "Send Line: $line"
                             }
-                            $writer.WriteLine($line)
+
+                            $writer.Write($line)
                         }
                     }
                 }
@@ -73,37 +60,23 @@ $jobCode = {
             
             $streamReader.Close()
             Remove-Item $tmpName
+        }
+    }
 
-
-            if($debug)
+    for($i = 0; $i -lt 20; ++$i)
+    {
+        Start-Sleep -Milliseconds 25
+        
+        if ([System.Console]::KeyAvailable)
+        {    
+            $key = [System.Console]::ReadKey()
+            if ($key.Key -eq '27') 
             {
-                Write-Host "Now at position: $lastPositionInFile"
-                Write-Host "Done in" $stopwatch.Elapsed.TotalSeconds "seconds"
+                $run = $false
             }
         }
     }
 }
-
-$p = [PowerShell]::Create()
-$null = $p.AddScript($jobCode).AddArgument($writer).AddArgument($debug)
-$p.BeginInvoke() | Out-Null
-
-#Invoke-Command -ScriptBlock $jobCode -ArgumentList $writer, $debug
-
-while($true)
-{
-    $key = [console]::ReadKey()
-    if ($key.Key -eq '27') 
-    {
-        break
-    }
-}
-
-$writer.WriteLine("KillMe")
-
-$p.Stop()
-$p.Dispose()
-$p.EndInvoke($job)
 
 
 $writer.Close()

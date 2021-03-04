@@ -1,6 +1,4 @@
-﻿KeyTest
-Begin
-2Vulpes, thou hast proven thyself a worthy foe! Now, I am much relieved to have thee as mine ally in the coming battle.
+﻿2Vulpes, thou hast proven thyself a worthy foe! Now, I am much relieved to have thee as mine ally in the coming battle.
 3Thou hast proven thyself a worthy foe! Vulpes, this time I shall lay waste to thine lands instead!
 1gg
 5Thou wast verily fortunate to triumph during our last battle, Vulpes. This time, thou shalt bend the knee!
