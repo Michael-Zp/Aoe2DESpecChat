@@ -10,3 +10,4 @@ add_executable(AoE2DESpecChat_Server main.cpp)
 set_target_properties(AoE2DESpecChat_Server PROPERTIES OUTPUT_NAME "server")
 
 target_link_libraries(AoE2DESpecChat_Server -pthread)
+target_link_libraries(AoE2DESpecChat_Server -latomic)

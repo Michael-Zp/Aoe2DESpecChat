@@ -18,8 +18,10 @@
 #include <mutex>
 #include <optional>
 #include <array>
+#include <sstream>
+#include <atomic>
 
-#define DEBUG_OUTPUT 1
+#define DEBUG_OUTPUT 0
 
 static const int BUF_SIZE = 1024;
 
@@ -33,20 +35,69 @@ struct ClientThread
     bool* Done;
 };
 
-std::optional<MyKey> getKey(char *buf)
+std::optional<MyKey> getKey(const char *buf, int len)
 {
-   if(strncmp(buf, "Key", 3) == 0)
-   {
+    if(strncmp(buf, "Key", 3) == 0)
+    {
 	MyKey ret;
-	memcpy(&ret, buf + 3, sizeof(MyKey));
+	memset(&ret, 0, sizeof(MyKey));
+	memcpy(&ret, buf + 3, len - 3);
+	ret[len - 3] = '\0';
 	return ret;
-   }
-   return {};
+    }
+    return {};
 }
 
-bool isKillMessage(char *buf)
+int keyHashForDebugging(const MyKey& key)
 {
-   return strncmp(buf, "KillMe", 6) == 0;
+    uint64_t sum = 0;
+    for(int i = 0; i < sizeof(MyKey); i++)
+    {
+	sum += key[i];
+    }
+    return sum;
+}
+
+std::atomic<uint64_t> nextID;
+
+uint64_t getNextID()
+{
+    return nextID++;
+}
+
+struct MessageMetaData
+{
+    int MessageLength;
+    int MessageOffset;
+};
+
+std::optional<MessageMetaData> getMessageMetaData(char* buf, int maxLength)
+{
+    MessageMetaData ret;
+    for(int i = 0; i < maxLength; ++i)
+    {
+	if(buf[i] == ';')
+	{
+	    if(DEBUG_OUTPUT)
+	        std::cout << "Found message size at: " << i << std::endl;
+
+	    std::string lenString(buf, i);
+
+	    if(DEBUG_OUTPUT)
+	        std::cout << "Found message with length: " << lenString << " , where length string is " << lenString.size() << " characters long." << std::endl;
+
+	    ret.MessageLength = std::stoi(lenString);
+	    ret.MessageOffset = lenString.size() + 1;
+
+	    if(ret.MessageLength + ret.MessageOffset > maxLength)
+	    {
+		return {};
+	    }
+
+	    return ret;
+	}
+    }
+    return {};
 }
 
 void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int playerConnection, bool* done)
@@ -56,56 +107,72 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 
     bool hasKey = false;
     MyKey key;
+    uint64_t id = getNextID();
 
-    while(!*done)
+    if(DEBUG_OUTPUT)
+        std::cout << "Player connection with ID " << id << " created." << std::endl;
+
+    int notFinishedMessageSize = 0;
+    while((readBytes = read(playerConnection, buf + notFinishedMessageSize, BUF_SIZE - 1 - notFinishedMessageSize)) > 0)
     {
-        readBytes = read(playerConnection, buf, BUF_SIZE - 1);
-
-	if(DEBUG_OUTPUT)
-	    std::cout << "Read player message" << std::endl;
-
 	buf[readBytes] = '\0';
 
-	auto possibleKey = getKey(buf);
+	if(DEBUG_OUTPUT)
+	    std::cout << "Read player message: '" << buf << "' with length: " << readBytes << std::endl;
 
-	if(possibleKey.has_value())
+	auto messageMetaData = getMessageMetaData(buf, readBytes);
+	int startOfNextMessage = 0;
+
+	while(messageMetaData.has_value() && (startOfNextMessage + messageMetaData.value().MessageLength) < readBytes)
 	{
-	    if(DEBUG_OUTPUT)
-		std::cout << "Read player key" << std::endl;
-
-	    key = possibleKey.value();
-	    hasKey = true;
+	    int startOfThisMessage = startOfNextMessage + messageMetaData.value().MessageOffset;
+	    std::string messageString(buf + startOfThisMessage, messageMetaData.value().MessageLength);
+	    startOfNextMessage = startOfThisMessage + messageMetaData.value().MessageLength;
 
 	    if(DEBUG_OUTPUT)
-		std::cout << "Player with key: " << std::string(std::begin(key), std::end(key)) << " connected." << std::endl;
+	        std::cout << "Len = " << messageMetaData.value().MessageLength << ". Start processing message: " << messageString << std::endl;
 
-	}
+	    auto possibleKey = getKey(messageString.c_str(), messageMetaData.value().MessageLength);
 
-	if(hasKey)
-	{
-	    auto outputPair = &(*headerToOutput)[key];
-	    auto mtx = &outputPair->first;
-	    auto outputVector = &outputPair->second;
-
-
-	    if(isKillMessage(buf))
+	    if(possibleKey.has_value())
 	    {
-	        int n = sprintf(buf, "%s\0", "KillMe");
-	        mtx->lock();
-	        outputVector->push_back(std::string(buf));
-	        mtx->unlock();
-	        *done = true;
-	        break;
+		if(DEBUG_OUTPUT)
+		    std::cout << "Read player key" << std::endl;
+
+		key = possibleKey.value();
+		hasKey = true;
+
+		if(DEBUG_OUTPUT)
+		    std::cout << "Player with key: " << keyHashForDebugging(key) << " connected." << std::endl;
+	    }
+	    else if(hasKey)
+	    {
+		auto outputPair = &(*headerToOutput)[key];
+		auto mtx = &outputPair->first;
+		auto outputVector = &outputPair->second;
+
+		std::stringstream outSs;
+
+		outSs << id << ";" << messageString << '\n';
+
+		if(DEBUG_OUTPUT)
+		    std::cout << "Adding player message: " << outSs.str() << std::endl;
+
+		mtx->lock();
+		outputVector->push_back(outSs.str());
+		mtx->unlock();
 	    }
 
-	    mtx->lock();
-	    outputVector->push_back(std::string(buf));
-	    mtx->unlock();
-
+	    messageMetaData = getMessageMetaData(buf + startOfNextMessage, readBytes - startOfNextMessage);
 	}
+
+	notFinishedMessageSize = readBytes - startOfNextMessage;
+	memcpy(buf, buf + startOfNextMessage, notFinishedMessageSize);
     }
 
     close(playerConnection);
+
+    *done = true;
 }
 
 void casterSendLoop(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterConnection, MyKey& key, bool& run)
@@ -124,12 +191,15 @@ void casterSendLoop(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::v
         {
             for(int i = 0; i < outputVector->size(); ++i)
             {
+		if(DEBUG_OUTPUT)
+		    std::cout << "Send to caster. Key: " << keyHashForDebugging(key) << " Message: " << (*outputVector)[i] << std::endl;
+
 	        send(casterConnection, (*outputVector)[i].c_str(), (*outputVector)[i].size(), 0);
             }
             outputVector->clear();
         }
         mtx->unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 }
 
@@ -140,53 +210,86 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 
     MyKey key;
     bool run = true;
+    bool sendThreadStarted = false;
     bool hasKey = false;
     std::thread sendThread;
 
+    int messageStart = 0;
     while(!hasKey)
     {
-        readBytes = read(casterConnection, buf, BUF_SIZE - 1);
+        readBytes = read(casterConnection, buf + messageStart, BUF_SIZE - messageStart - 1);
+
+	if(readBytes <= 0)
+	{
+	    break;
+	}
 
 	buf[readBytes] = '\0';
 
-	auto possibleKey = getKey(buf);
+	auto messageMetaData = getMessageMetaData(buf, readBytes);
 
-	if(possibleKey.has_value())
+	if(messageMetaData.has_value())
 	{
-	    key = possibleKey.value();
-	    hasKey = true;
+            auto possibleKey = getKey(buf + messageMetaData.value().MessageOffset, messageMetaData.value().MessageLength);
 
-	    if(DEBUG_OUTPUT)
-		std::cout << "Caster with key: " << std::string(std::begin(key), std::end(key)) << " connected." << std::endl;
+	    if(possibleKey.has_value())
+	    {
+	        key = possibleKey.value();
+	        hasKey = true;
 
+	        if(DEBUG_OUTPUT)
+		    std::cout << "Caster with key: " << keyHashForDebugging(key) << " connected." << std::endl;
+	    }
+
+	    if(hasKey)
+            {
+	        sendThreadStarted = true;
+	        sendThread = std::thread(casterSendLoop, headerToOutput, casterConnection, std::ref(key), std::ref(run));
+            }
 	}
-
-	if(hasKey)
-        {
-	    sendThread = std::thread(casterSendLoop, headerToOutput, casterConnection, std::ref(key), std::ref(run));
-        }
+	else
+	{
+	    messageStart = readBytes;
+	}
     }
 
-    while(!*done)
+    messageStart = 0;
+    while((readBytes = read(casterConnection, buf + messageStart, BUF_SIZE - messageStart - 1)) > 0)
     {
-	readBytes = read(casterConnection, buf, BUF_SIZE - 1);
-
 	buf[readBytes] = '\0';
 
-	auto possibleKey = getKey(buf);
+	auto messageMetaData = getMessageMetaData(buf, readBytes);
 
-	if(possibleKey.has_value())
+	if(messageMetaData.has_value())
 	{
-	    memcpy(&key, buf, sizeof(MyKey));
-	    if(DEBUG_OUTPUT)
-		std::cout << "Caster with key: " << std::string(std::begin(key), std::end(key)) << " connected." << std::endl;
+            auto possibleKey = getKey(buf + messageMetaData.value().MessageOffset, messageMetaData.value().MessageLength);
+
+	    if(possibleKey.has_value())
+	    {
+	        memcpy(&key, possibleKey.value().data(), sizeof(MyKey));
+
+	        if(DEBUG_OUTPUT)
+	            std::cout << "Updated caster key to: " << keyHashForDebugging(key) << std::endl;
+	    }
+	}
+	else
+	{
+	    messageStart = readBytes;
 	}
     }
 
-    run = false;
-    sendThread.join();
+    if(sendThreadStarted)
+    {
+	run = false;
+	sendThread.join();
+    }
+
+    if(DEBUG_OUTPUT)
+	std::cout << "Closing caster connection with key: " << std::string(std::begin(key), std::end(key)) << std::endl;
 
     close(casterConnection);
+
+    *done = true;
 }
 
 
