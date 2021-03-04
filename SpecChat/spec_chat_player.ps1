@@ -3,7 +3,7 @@ $tcpStream = $tcpConnection.GetStream()
 $writer = New-Object System.IO.StreamWriter($tcpStream)
 $writer.AutoFlush = $true
 
-$debug = $true
+$debug = $false
 
 $key = "KeyTest"
 $keyMessage = "$($key.Length);$key"

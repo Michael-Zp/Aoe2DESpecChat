@@ -143,27 +143,49 @@
                <local:Age2Button Width="610" Height="230" Style="{StaticResource ButtonImageMix}" HelpLocale="IDS_LEARN_TO_PLAY_TOOLTIP" TextLocale="9503" TestKey="Background/ButtonLearnDisabled"        x:Name="ButtonLearnDialogDisabled"        Margin="0,0,0,80" ImageString="/resources/simplemainmenu/button_image_learntoplay.png"/>
 
                <StackPanel Width="754" Height="250" >
-                  <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Margin="0,10,0,10">
-                     <Run Text="Spec Chat:"/>
-                  </local:Age2TextBlock>
+                  <Grid Width="754" Margin="0,10,0,10">
+                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                     </Grid.ColumnDefinitions>
+                     <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Grid.Column="0">
+                        <Run Text="Spec Chat"/>
+                     </local:Age2TextBlock>
+                     <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Grid.Column="2">
+                        <local:Age2Hyperlink NavigateUri="https://github.com/Michael-Zp/Aoe2DESpecChat">
+                           How to Install
+                        </local:Age2Hyperlink>
+                     </local:Age2TextBlock>
+                  </Grid>
 
-                  <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Margin="0,10,0,10">
-                     <local:Age2Hyperlink NavigateUri="www.michael-zappe.de">
-                        How to Install
-                     </local:Age2Hyperlink>
-                  </local:Age2TextBlock>
+                  <Grid Width="754" Margin="0,10,0,10">
+                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                     </Grid.ColumnDefinitions>
+                     <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Grid.Column="0">
+                        <local:Age2Hyperlink NavigateUri="./start_spec_chat_player.exe">
+                           Player 
+                        </local:Age2Hyperlink>
+                     </local:Age2TextBlock>
 
-                  <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Margin="0,10,0,10">
-                     <local:Age2Hyperlink NavigateUri="cmd">
-                        Start Player  
-                     </local:Age2Hyperlink>
-                     <local:Age2Hyperlink NavigateUri="cmd">
-                        Start Caster  
-                     </local:Age2Hyperlink>
-                     <local:Age2Hyperlink NavigateUri="cmd">
-                        Start Caster GUI  
-                     </local:Age2Hyperlink>
-                  </local:Age2TextBlock>
+                     <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Grid.Column="2">
+                        <local:Age2Hyperlink NavigateUri="./start_spec_chat_caster.exe">
+                           Caster
+                        </local:Age2Hyperlink>
+                     </local:Age2TextBlock>
+
+                     <local:Age2TextBlock Style="{StaticResource TextBlockFontB40}" Grid.Column="4">
+                        <local:Age2Hyperlink NavigateUri="./start_spec_chat_caster_gui.exe">
+                           Caster GUI
+                        </local:Age2Hyperlink>
+                     </local:Age2TextBlock>
+                  </Grid>
+
                </StackPanel>
 
                <Rectangle Fill="{StaticResource mainmenu_hr}" Margin="0,0,0,25" Width="544" Height="96"/>

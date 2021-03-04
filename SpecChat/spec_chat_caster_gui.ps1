@@ -84,6 +84,15 @@ $Global:LinesRead = 0
 function Update-Chat()
 {
     $contentChanged = $false
+    
+    $baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
+    
+    if(-not (Test-Path $baseDirectory))
+    {
+        mkdir $baseDirectory | Out-Null
+    }
+    
+    cd $baseDirectory
 
     $file = "./currentChat.txt"
     if($file -ne "" -and (Test-Path -Path $file))
