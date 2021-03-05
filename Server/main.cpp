@@ -20,8 +20,11 @@
 #include <array>
 #include <sstream>
 #include <atomic>
+#include <algorithm>
 
-#define DEBUG_OUTPUT 0
+
+#define DEBUG_MESSAGES 0
+#define DEBUG_CONNECTIONS 0
 
 static const int BUF_SIZE = 1024;
 
@@ -33,6 +36,7 @@ struct ClientThread
 {
     std::thread Thread;
     bool* Done;
+    bool Joined;
 };
 
 std::optional<MyKey> getKey(const char *buf, int len)
@@ -78,12 +82,12 @@ std::optional<MessageMetaData> getMessageMetaData(char* buf, int maxLength)
     {
 	if(buf[i] == ';')
 	{
-	    if(DEBUG_OUTPUT)
+	    if(DEBUG_MESSAGES)
 	        std::cout << "Found message size at: " << i << std::endl;
 
 	    std::string lenString(buf, i);
 
-	    if(DEBUG_OUTPUT)
+	    if(DEBUG_MESSAGES)
 	        std::cout << "Found message with length: " << lenString << " , where length string is " << lenString.size() << " characters long." << std::endl;
 
 	    ret.MessageLength = std::stoi(lenString);
@@ -109,7 +113,7 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
     MyKey key;
     uint64_t id = getNextID();
 
-    if(DEBUG_OUTPUT)
+    if(DEBUG_CONNECTIONS)
         std::cout << "Player connection with ID " << id << " created." << std::endl;
 
     int notFinishedMessageSize = 0;
@@ -117,7 +121,7 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
     {
 	buf[readBytes] = '\0';
 
-	if(DEBUG_OUTPUT)
+	if(DEBUG_MESSAGES)
 	    std::cout << "Read player message: '" << buf << "' with length: " << readBytes << std::endl;
 
 	auto messageMetaData = getMessageMetaData(buf, readBytes);
@@ -129,20 +133,20 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 	    std::string messageString(buf + startOfThisMessage, messageMetaData.value().MessageLength);
 	    startOfNextMessage = startOfThisMessage + messageMetaData.value().MessageLength;
 
-	    if(DEBUG_OUTPUT)
+	    if(DEBUG_MESSAGES)
 	        std::cout << "Len = " << messageMetaData.value().MessageLength << ". Start processing message: " << messageString << std::endl;
 
 	    auto possibleKey = getKey(messageString.c_str(), messageMetaData.value().MessageLength);
 
 	    if(possibleKey.has_value())
 	    {
-		if(DEBUG_OUTPUT)
+		if(DEBUG_MESSAGES)
 		    std::cout << "Read player key" << std::endl;
 
 		key = possibleKey.value();
 		hasKey = true;
 
-		if(DEBUG_OUTPUT)
+		if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
 		    std::cout << "Player with key: " << keyHashForDebugging(key) << " connected." << std::endl;
 	    }
 	    else if(hasKey)
@@ -155,7 +159,7 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 
 		outSs << id << ";" << messageString << '\n';
 
-		if(DEBUG_OUTPUT)
+		if(DEBUG_MESSAGES)
 		    std::cout << "Adding player message: " << outSs.str() << std::endl;
 
 		mtx->lock();
@@ -169,6 +173,10 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 	notFinishedMessageSize = readBytes - startOfNextMessage;
 	memcpy(buf, buf + startOfNextMessage, notFinishedMessageSize);
     }
+
+
+    if(DEBUG_CONNECTIONS)
+	std::cout << "Closing player connection with key: " << keyHashForDebugging(key) << std::endl;
 
     close(playerConnection);
 
@@ -191,7 +199,7 @@ void casterSendLoop(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::v
         {
             for(int i = 0; i < outputVector->size(); ++i)
             {
-		if(DEBUG_OUTPUT)
+		if(DEBUG_MESSAGES)
 		    std::cout << "Send to caster. Key: " << keyHashForDebugging(key) << " Message: " << (*outputVector)[i] << std::endl;
 
 	        send(casterConnection, (*outputVector)[i].c_str(), (*outputVector)[i].size(), 0);
@@ -237,7 +245,7 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 	        key = possibleKey.value();
 	        hasKey = true;
 
-	        if(DEBUG_OUTPUT)
+	        if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
 		    std::cout << "Caster with key: " << keyHashForDebugging(key) << " connected." << std::endl;
 	    }
 
@@ -268,7 +276,7 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 	    {
 	        memcpy(&key, possibleKey.value().data(), sizeof(MyKey));
 
-	        if(DEBUG_OUTPUT)
+	        if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
 	            std::cout << "Updated caster key to: " << keyHashForDebugging(key) << std::endl;
 	    }
 	}
@@ -284,8 +292,8 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 	sendThread.join();
     }
 
-    if(DEBUG_OUTPUT)
-	std::cout << "Closing caster connection with key: " << std::string(std::begin(key), std::end(key)) << std::endl;
+    if(DEBUG_CONNECTIONS)
+	std::cout << "Closing caster connection with key: " << keyHashForDebugging(key) << std::endl;
 
     close(casterConnection);
 
@@ -300,21 +308,32 @@ void waitForPlayers(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::v
     while(true)
     {
         int playerConnection = accept(playerSocket, (struct sockaddr*)NULL, NULL);
-	if(DEBUG_OUTPUT)
+	if(DEBUG_CONNECTIONS)
             std::cout << "Player connected." << std::endl;
 
         bool *done = new bool;
 	*done = false;
         std::thread thread(managePlayerConnection, headerToOutput, playerConnection, done);
-        playerThreads.push_back({std::move(thread), done});
+        playerThreads.push_back({std::move(thread), done, false});
 
         for(auto& pt : playerThreads)
         {
             if(*pt.Done)
             {
                 pt.Thread.join();
+		pt.Joined = true;
             }
         }
+
+	for(int i = 0; i < playerThreads.size(); ++i)
+	{
+	    if(*(playerThreads[i].Done) && playerThreads[i].Joined)
+	    {
+		playerThreads.erase(playerThreads.begin() + i);
+		--i;
+	    }
+	}
+
     }
 }
 
@@ -324,21 +343,31 @@ void waitForCasters(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::v
     while(true)
     {
         int casterConnection = accept(casterSocket, (struct sockaddr*)NULL, NULL);
-	if(DEBUG_OUTPUT)
+	if(DEBUG_CONNECTIONS)
             std::cout << "Caster connected." << std::endl;
 
         bool *done = new bool;
 	*done = false;
         std::thread thread(manageCasterConnection, headerToOutput, casterConnection, done);
-        casterThreads.push_back({std::move(thread), done});
+        casterThreads.push_back({std::move(thread), done, false});
 
         for(auto& ct : casterThreads)
         {
             if(*ct.Done)
             {
-                ct.Thread.join();
+		ct.Thread.join();
+		ct.Joined = true;
             }
         }
+
+	for(int i = 0; i < casterThreads.size(); ++i)
+	{
+	    if(*(casterThreads[i].Done) && casterThreads[i].Joined)
+	    {
+		casterThreads.erase(casterThreads.begin() + i);
+		--i;
+	    }
+	}
     }
 }
 
