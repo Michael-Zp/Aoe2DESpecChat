@@ -85,7 +85,7 @@ function Update-Chat()
 {
     $contentChanged = $false
 
-    $file = "./currentChat.txt"
+    $file = "$global:baseDirectory/currentChat.txt"
     if($file -ne "" -and (Test-Path -Path $file))
     {            
         $fileRead = $false
@@ -149,7 +149,13 @@ function Update-Chat()
 #-------------------------------------------------------------#
 #----Script Execution-----------------------------------------#
 #-------------------------------------------------------------#
-
+    
+$global:baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
+    
+if(-not (Test-Path $global:baseDirectory))
+{
+    mkdir $global:baseDirectory | Out-Null
+}
  
 $reader=(New-Object System.Xml.XmlNodeReader $xaml)
 $Window=[Windows.Markup.XamlReader]::Load( $reader )
@@ -188,14 +194,14 @@ $Window.Add_KeyDown({
         {
             $chatBackupFile = (Get-Date -Format "yyyyMMdd_hhmmss") + ".txt"
 
-            if(-not (Test-Path "./backups"))
+            if(-not (Test-Path "$global:baseDirectory/backups"))
             {
-                mkdir "./backups" | Out-Null
+                mkdir "$global:baseDirectory/backups" | Out-Null
             }
 
-            if(Test-Path "./currentChat.txt")
+            if(Test-Path "$global:baseDirectory/currentChat.txt")
             {
-                Move-Item "./currentChat.txt" "./backups/$chatBackupFile" | Out-Null
+                Move-Item "$global:baseDirectory/currentChat.txt" "$global:baseDirectory/backups/$chatBackupFile" | Out-Null
             }
 
             $observableCollection.clear()
