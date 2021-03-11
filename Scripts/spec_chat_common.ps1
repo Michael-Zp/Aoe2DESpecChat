@@ -1,4 +1,32 @@
-﻿function Get-LatestRecPath
+﻿function Get-BaseDir
+{
+    $baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
+
+    if(-not (Test-Path $baseDirectory))
+    {
+        mkdir $baseDirectory | Out-Null
+    }
+
+    return $baseDirectory
+}
+
+function Push-Backup
+{
+    $baseDirectory = Get-BaseDir
+    $chatBackupFile = (Get-Date -Format "yyyyMMdd_hhmmss") + ".txt"
+
+    if(-not (Test-Path "$baseDirectory/backups"))
+    {
+        mkdir "$baseDirectory/backups" | Out-Null
+    }
+
+    if(Test-Path "$baseDirectory/currentChat.txt")
+    {
+        Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
+    }
+}
+
+function Get-LatestRecPath
 {
     $InitDir = [Environment]::GetFolderPath('UserProfile') + "\Games\Age of Empires 2 DE"
     Get-ChildItem $InitDir | ForEach-Object { if($_.Name -match "\d\d+") { $profilePath = $_ } }
@@ -92,8 +120,11 @@ function Update-Key
 
 function Loop-UntilEscPressOrGameClosed
 {
-    $breakIfGameIsClosed = $true
-    if($breakIfGameIsClosed)
+    Param(
+        $release
+    )
+
+    if(-not $release)
     {
         Write-Debug "Will not break even if game is closed"
     }
@@ -102,15 +133,19 @@ function Loop-UntilEscPressOrGameClosed
     {
         Start-Sleep -Milliseconds 25
         
-        if ([System.Console]::KeyAvailable)
-        {    
-            $key = [System.Console]::ReadKey()
-            if ($key.Key -eq '27') 
-            {
-                break;
+        # Check if a console is available, otherwise KeyAvailable throws an exception
+        if ([System.Console]::OpenStandardInput(1) -ne [System.IO.Stream]::Null)
+        {
+            if ([System.Console]::KeyAvailable)
+            {    
+                $key = [System.Console]::ReadKey()
+                if ($key.Key -eq '27') 
+                {
+                    break;
+                }
             }
         }
-        elseif((-not $breakIfGameIsClosed) -and ((Get-Process | Where-Object { $_.Name -eq "AoE2DE_s" }).Count) -lt 1)
+        elseif($breakIfGameIsClosed -and ((Get-Process | Where-Object { $_.Name -eq "AoE2DE_s" }).Count) -lt 1)
         {
             break;
         }

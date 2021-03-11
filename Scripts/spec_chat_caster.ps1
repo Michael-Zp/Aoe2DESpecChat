@@ -2,6 +2,12 @@
 
 $DebugPreference = "Continue"
 $release = $false
+if($args.Count -gt 0)
+{
+    $release = $args[0]
+}
+
+Write-Debug "Started with release = $release"
 
 $PowerShell = [powershell]::Create()
 
@@ -21,7 +27,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
 
 [void]$PowerShell.AddScript({
-    Param($binaryWriter, $tcpStream, $baseDirectory, $commonIncludePath, $pDebugPref)
+    Param($binaryWriter, $tcpStream, $commonIncludePath, $pDebugPref)
     
     . "$commonIncludePath"
 
@@ -65,10 +71,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                 $lastMessages[$i] = Get-DefaultMessage
             }
 
-            if(Test-Path "$baseDirectory/currentChat.txt")
-            {
-                Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
-            }
+            Push-Backup
 
             Update-Key $binaryWriter
         }
@@ -86,11 +89,8 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                 {
                     $lastMessages[$i] = Get-DefaultMessage
                 }
-
-                if(Test-Path "$baseDirectory/currentChat.txt")
-                {
-                    Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
-                }
+                
+                Push-Backup
 
                 Update-Key $binaryWriter
             }
@@ -181,7 +181,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                     $outLine = "$($lastMessages[$currentMessage].PlayerInGameNumber)$($lastMessages[$currentMessage].Text)"
                     try
                     {
-                        $outLine | Out-File -FilePath "$baseDirectory/currentChat.txt" -Encoding utf8 -Append
+                        $outLine | Out-File -FilePath "$(Get-BaseDir)/currentChat.txt" -Encoding Unicode -Append
                         $lineWritten = $true
                     }
                     catch
@@ -204,37 +204,19 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
 $tcpStream = $tcpConnection.GetStream()
 $binaryWriter = New-Object System.IO.BinaryWriter($tcpStream)
-
-$chatBackupFile = (Get-Date -Format "yyyyMMdd_hhmmss") + ".txt"
         
-$baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
-
-if(-not (Test-Path $baseDirectory))
-{
-    mkdir $baseDirectory | Out-Null
-}
-
-if(-not (Test-Path "$baseDirectory/backups"))
-{
-    mkdir "$baseDirectory/backups" | Out-Null
-}
-
-if(Test-Path "$baseDirectory/currentChat.txt")
-{
-    Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
-}
+Push-Backup
 
 Update-Key $binaryWriter
     
 [void]$PowerShell.AddArgument($binaryWriter)
 [void]$PowerShell.AddArgument($tcpStream)
-[void]$PowerShell.AddArgument($baseDirectory)
 [void]$PowerShell.AddArgument("$PSScriptRoot/spec_chat_common.ps1")
 [void]$PowerShell.AddArgument($DebugPreference)
 
 $Handle = $PowerShell.BeginInvoke()
 
-Loop-UntilEscPressOrGameClosed
+Loop-UntilEscPressOrGameClosed $release
 
 $PowerShell.Dispose()
 
