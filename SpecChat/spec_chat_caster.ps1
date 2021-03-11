@@ -102,9 +102,9 @@ $PowerShell.Streams.Debug.Add_DataAdded({
             $lineLength = $buf[0] * $byteValue0 + $buf[1] * $byteValue1
             $playerID =  $buf[2] * $byteValue0 + $buf[3] * $byteValue1 + $buf[4] * $byteValue2 + $buf[5] * $byteValue3
             $playerInGameNumber = $buf[6]
-            $messageText = ([System.Text.Encoding]::Unicode).GetString($buf, 6, $lineLength - 6)
+            $messageText = ([System.Text.Encoding]::Unicode).GetString($buf, 7, $lineLength - 7)
 
-            Write-Debug "Read message: $messageText with line length: $lineLength"
+            Write-Debug "Read message: $messageText from player $playerInGameNumber with line length: $lineLength"
         
             $foundDuplicate = $false
 
