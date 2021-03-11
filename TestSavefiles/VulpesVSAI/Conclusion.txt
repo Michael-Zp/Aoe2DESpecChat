@@ -1,0 +1,5 @@
+TLDR; This is useless.
+
+Even on the same game settings the header of two as identical as possible games is different.
+I need more people to test, but I am anxious about asking around. Gotta pump myself up. Just give me some hours or days ^^
+An optimal setup would need at least three players. Start a game with two players in the game. The third one spectates and then I can compare the files to find a suitable key to connect the players.
