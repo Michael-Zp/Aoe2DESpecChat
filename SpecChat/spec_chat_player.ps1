@@ -1,13 +1,10 @@
-﻿$DebugPreference = "Continue"
+﻿. "$PSScriptRoot/spec_chat_common.ps1"
+
+$DebugPreference = "Continue"
 
 $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40321)
 $tcpStream = $tcpConnection.GetStream()
-$writer = New-Object System.IO.StreamWriter($tcpStream)
-$writer.AutoFlush = $true
-
-$key = "KeyTest"
-$keyMessage = "$($key.Length);$key"
-$writer.Write($keyMessage)
+$binaryWriter = New-Object System.IO.BinaryWriter($tcpStream)
 
 $PowerShell = [powershell]::Create()
 
@@ -27,7 +24,9 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
 
 [void]$PowerShell.AddScript({
-    Param($writer, $pDebugPref)
+    Param($binaryWriter, $commonIncludePath, $pDebugPref)
+
+    . "$commonIncludePath"
     
     $DebugPreference = $pDebugPref
 
@@ -37,17 +36,25 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
     while($true)
     {
-        $InitDir = [Environment]::GetFolderPath('UserProfile') + "\Games\Age of Empires 2 DE"
-        Get-ChildItem $InitDir | ForEach-Object { if($_.Name -match "\d\d+") { $profilePath = $_ } }
-        $InitDir = $InitDir + "\$profilePath\savegame"
-        $file = (Get-ChildItem $InitDir | Sort-Object LastWriteTime -Descending)[0].FullName
+        $file = Get-LatestRecPath
 
+        $updateKey = $false
         if($lastFileName -ne "")
         {
             if($lastFileName -ne $file)
             {
                 $lastPositionInFile = 0
+                $updateKey = $true
             }
+        }
+        else
+        {
+            $updateKey = $true
+        }
+
+        if($updateKey)
+        {
+            Update-Key -BinaryWriter $binaryWriter
         }
 
         $lastFileName = $file
@@ -71,16 +78,31 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                     {
                         if($parts[$i] -match '"player":(\d+),"channel":\d+,"message":"(.*?)","messageAGP":".*?"}') 
                         { 
-                            $playerNumber = $Matches[1]
-                            $line = "$playerNumber;$($Matches[2])"
-                            $line = "$($line.Length);$line"
-                    
-                            if($debug)
-                            {
-                                Write-Host "Send Line: $line"
-                            }
+                            #$playerNumber = $Matches[1]
+                            #$line = "$playerNumber;$($Matches[2])"
+                            #$line = "$($line.Length);$line"
 
-                            $writer.Write($line)
+                            $line = $Matches[2]
+                            
+                            $textBytes = ([System.Text.Encoding]::Unicode).GetBytes($line)
+
+                            $headerArr = New-Object -TypeName 'byte[]' -ArgumentList 4
+                            $lengthBytes = [System.BitConverter]::GetBytes($textBytes.Length + $headerArr.Count)
+                            $headerArr[0] = $lengthBytes[0]
+                            $headerArr[1] = $lengthBytes[1]
+                            $headerArr[2] = 22
+                            $headerArr[3] = $Matches[1]
+
+                            $outArr = New-Object -TypeName 'byte[]' -ArgumentList ($textBytes.Count + $headerArr.Count)
+                            
+                            #Ints are converted into byte[4], but as we will never have a text longer than the range of 2 bytes and the player number is between 1-8 this will be fine
+                            
+                            [System.Array]::Copy($headerArr, $outArr, $headerArr.Count)
+                            [System.Array]::Copy($textBytes, 0, $outArr, $headerArr.Count, $textBytes.Count)
+
+                            Write-Debug "Send Line: $line"
+                            Write-Debug $outArr[0]
+                            $binaryWriter.Write($outArr)
                         }
                     }
                 }
@@ -91,44 +113,22 @@ $PowerShell.Streams.Debug.Add_DataAdded({
             $streamReader.Close()
             Remove-Item $tmpName
         }
+
+        Start-Sleep -Milliseconds 500
     }
 
-    for($i = 0; $i -lt 20; ++$i)
-    {
-        Start-Sleep -Milliseconds 25
-        
-        if ([System.Console]::KeyAvailable)
-        {    
-            $key = [System.Console]::ReadKey()
-            if ($key.Key -eq '27') 
-            {
-                $run = $false
-            }
-        }
-    }
 })
 
-[void]$PowerShell.AddArgument($writer)
+[void]$PowerShell.AddArgument($binaryWriter)
+[void]$PowerShell.AddArgument("$PSScriptRoot/spec_chat_common.ps1")
 [void]$PowerShell.AddArgument($DebugPreference)
 
 $Handle = $PowerShell.BeginInvoke()
 
-while($true)
-{
-    Start-Sleep -Milliseconds 25
-        
-    if ([System.Console]::KeyAvailable)
-    {    
-        $key = [System.Console]::ReadKey()
-        if ($key.Key -eq '27') 
-        {
-            break;
-        }
-    }
-}
+Loop-UntilEscPressOrGameClosed
 
 $PowerShell.Dispose()
 
 
-$writer.Close()
+$binaryWriter.Close()
 $tcpConnection.Close()
