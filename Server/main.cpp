@@ -35,20 +35,20 @@ struct GeneralHeader
 
     static constexpr uint8_t TypeKey = 11;
     static constexpr uint8_t TypeMessage = 22;
-};
+} __attribute__((packed));
 
 struct MessageHeader
 {
     GeneralHeader General;
     uint8_t PlayerNumber;
-};
+} __attribute__((packed));
 
 struct OutputMessageHeader
 {
     uint16_t Size;
     uint32_t PlayerID;
     uint8_t PlayerNumber;
-};
+} __attribute__((packed));
 
 struct OutputMessages
 {
