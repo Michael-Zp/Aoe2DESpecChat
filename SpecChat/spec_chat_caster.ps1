@@ -49,7 +49,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
     $currentMatch = Get-LatestRecPath
     
-    $buf = New-Object -TypeName 'byte[]' -ArgumentList 1024
+    $buf = New-Object -TypeName 'byte[]' -ArgumentList (1024 * 50)
 
     $notFinishedMessageSize = 0
 
@@ -57,6 +57,9 @@ $PowerShell.Streams.Debug.Add_DataAdded({
     {
         if((Get-LatestRecPath) -ne $currentMatch)
         {
+            $currentMatch = Get-LatestRecPath
+            
+            Write-Debug "UpdateKeyFromOutside"
             for($i = 0; $i -lt $maxNumLastMessages; ++$i)
             {
                 $lastMessages[$i] = Get-DefaultMessage
@@ -76,6 +79,8 @@ $PowerShell.Streams.Debug.Add_DataAdded({
         {
             if((Get-LatestRecPath) -ne $currentMatch)
             {
+                $currentMatch = Get-LatestRecPath
+
                 Write-Debug "UpdateKeyFromInside"
                 for($i = 0; $i -lt $maxNumLastMessages; ++$i)
                 {
