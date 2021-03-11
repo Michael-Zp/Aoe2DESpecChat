@@ -1,5 +1,6 @@
-﻿$DebugPreference = "Continue"
-$test_run = $false
+﻿. "$PSScriptRoot/spec_chat_common.ps1"
+
+$DebugPreference = "Continue"
 
 $PowerShell = [powershell]::Create()
 
@@ -19,10 +20,11 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
 
 [void]$PowerShell.AddScript({
-    Param($writer, $reader, $baseDirectory, $pDebugPref, $test_run)
+    Param($binaryWriter, $tcpStream, $baseDirectory, $commonIncludePath, $pDebugPref)
     
-    $DebugPreference = $pDebugPref
+    . "$commonIncludePath"
 
+    $DebugPreference = $pDebugPref
 
     $maxNumLastMessages = 20
     $currentMessage = 0
@@ -44,80 +46,65 @@ $PowerShell.Streams.Debug.Add_DataAdded({
         $lastMessages += Get-DefaultMessage
     }
 
-    if($test_run)
-    {
-        $test_run_timestamp = [int][double]::Parse((Get-Date -UFormat %s))
-        $test_run_index = 0
-        $lastMessages[$test_run_index].Initialized        = $true
-        $lastMessages[$test_run_index].PlayerID           = 1111
-        $lastMessages[$test_run_index].PlayerInGameNumber = 1
-        $lastMessages[$test_run_index].Text               = "Message from P1"
-        $lastMessages[$test_run_index].Timestamp          = $test_run_timestamp
-        $test_run_index++
-
-        $lastMessages[$test_run_index].Initialized        = $true
-        $lastMessages[$test_run_index].PlayerID           = 2222
-        $lastMessages[$test_run_index].PlayerInGameNumber = 2
-        $lastMessages[$test_run_index].Text               = "Message from P2"
-        $lastMessages[$test_run_index].Timestamp          = $test_run_timestamp
-        $test_run_index++
-
-        $lastMessages[$test_run_index].Initialized        = $true
-        $lastMessages[$test_run_index].PlayerID           = 2222
-        $lastMessages[$test_run_index].PlayerInGameNumber = 1
-        $lastMessages[$test_run_index].Text               = "Message from P1"
-        $lastMessages[$test_run_index].Timestamp          = $test_run_timestamp
-        $test_run_index++
-
-        $lastMessages[$test_run_index].Initialized        = $true
-        $lastMessages[$test_run_index].PlayerID           = 1111
-        $lastMessages[$test_run_index].PlayerInGameNumber = 1
-        $lastMessages[$test_run_index].Text               = "Message from P1"
-        $lastMessages[$test_run_index].Timestamp          = $test_run_timestamp - 35
-        $test_run_index++
-
-        $lastMessages[$test_run_index].Initialized        = $true
-        $lastMessages[$test_run_index].PlayerID           = 2222
-        $lastMessages[$test_run_index].PlayerInGameNumber = 1
-        $lastMessages[$test_run_index].Text               = "Message from P1"
-        $lastMessages[$test_run_index].Timestamp          = $test_run_timestamp - 35
-        $test_run_index++
-
-        $lastMessages[$test_run_index].Initialized        = $true
-        $lastMessages[$test_run_index].PlayerID           = 1111
-        $lastMessages[$test_run_index].PlayerInGameNumber = 2
-        $lastMessages[$test_run_index].Text               = "Message from P2"
-        $lastMessages[$test_run_index].Timestamp          = $test_run_timestamp - 35
-        $test_run_index++
-    }
-
+    $currentMatch = Get-LatestRecPath
+    
+    $buf = New-Object -TypeName 'byte[]' -ArgumentList 1024
 
     while($true)
     {
-        if($test_run)
+        if((Get-LatestRecPath) -ne $currentMatch)
         {
-            $line = "3333;1;Different Message"
-        }
-        else
-        {
-            $task = $reader.ReadLineAsync()
-            while (-not $task.AsyncWaitHandle.WaitOne(100)) { }
-            $line = $task.GetAwaiter().GetResult()
-        }
-
-        if($line.Length -gt 0)
-        {
-            Write-Debug $line
-
-            if(-not($line -match "\d+;\d+;.*"))
+            for($i = 0; $i -lt $maxNumLastMessages; ++$i)
             {
-                continue;
+                $lastMessages[$i] = Get-DefaultMessage
             }
 
-            $splits = $line -split ";"
-            $playerID = $splits[0]
-            $playerInGameNumber = $splits[1]
-            $messageText = $line.Substring($playerID.Length + $playerInGameNumber.Length + 2)
+            if(Test-Path "$baseDirectory/currentChat.txt")
+            {
+                Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
+            }
+
+            Update-Key $binaryWriter
+        }
+
+        $task = $tcpStream.ReadAsync($buf, 0, 1024)
+
+        while (-not $task.AsyncWaitHandle.WaitOne(200))
+        {
+            if((Get-LatestRecPath) -ne $currentMatch)
+            {
+                Write-Debug "UpdateKeyFromInside"
+                for($i = 0; $i -lt $maxNumLastMessages; ++$i)
+                {
+                    $lastMessages[$i] = Get-DefaultMessage
+                }
+
+                if(Test-Path "$baseDirectory/currentChat.txt")
+                {
+                    Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
+                }
+
+                Update-Key $binaryWriter
+            }
+        }
+
+        $readBytes = $task.GetAwaiter().GetResult()
+        
+
+        if($readBytes -gt 0)
+        {
+            Write-Debug "Read message with $readBytes bytes"
+
+            $byteValue0 = 1
+            $byteValue1 = ([System.Math]::Pow(2, 8) - 1)
+            $byteValue2 = ([System.Math]::Pow(2, 16) - 1)
+            $byteValue3 = ([System.Math]::Pow(2, 24) - 1)
+            $lineLength = $buf[0] * $byteValue0 + $buf[1] * $byteValue1
+            $playerID =  $buf[2] * $byteValue0 + $buf[3] * $byteValue1 + $buf[4] * $byteValue2 + $buf[5] * $byteValue3
+            $playerInGameNumber = $buf[6]
+            $messageText = ([System.Text.Encoding]::Unicode).GetString($buf, 6, $lineLength - 6)
+
+            Write-Debug "Read message: $messageText with line length: $lineLength"
         
             $foundDuplicate = $false
 
@@ -193,66 +180,42 @@ $PowerShell.Streams.Debug.Add_DataAdded({
     }
 })
 
-if(-not $test_run)
-{
-    $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
-    $tcpStream = $tcpConnection.GetStream()
-    $writer = New-Object System.IO.StreamWriter($tcpStream)
-    $writer.AutoFlush = $true
-    $reader = New-Object System.IO.StreamReader($tcpStream)
+$tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
+$tcpStream = $tcpConnection.GetStream()
+$binaryWriter = New-Object System.IO.BinaryWriter($tcpStream)
 
-    $chatBackupFile = (Get-Date -Format "yyyyMMdd_hhmmss") + ".txt"
+$chatBackupFile = (Get-Date -Format "yyyyMMdd_hhmmss") + ".txt"
         
-    $baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
+$baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
 
-    if(-not (Test-Path $baseDirectory))
-    {
-        mkdir $baseDirectory | Out-Null
-    }
-
-    if(-not (Test-Path "$baseDirectory/backups"))
-    {
-        mkdir "$baseDirectory/backups" | Out-Null
-    }
-
-    if(Test-Path "$baseDirectory/currentChat.txt")
-    {
-        Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
-    }
-    
-    $key = "KeyTest"
-    $keyMessage = "$($key.Length);$key"
-    $writer.Write($keyMessage)
-    
-    [void]$PowerShell.AddArgument($writer)
-    [void]$PowerShell.AddArgument($reader)
+if(-not (Test-Path $baseDirectory))
+{
+    mkdir $baseDirectory | Out-Null
 }
 
+if(-not (Test-Path "$baseDirectory/backups"))
+{
+    mkdir "$baseDirectory/backups" | Out-Null
+}
+
+if(Test-Path "$baseDirectory/currentChat.txt")
+{
+    Move-Item "$baseDirectory/currentChat.txt" "$baseDirectory/backups/$chatBackupFile" | Out-Null
+}
+
+Update-Key $binaryWriter
+    
+[void]$PowerShell.AddArgument($binaryWriter)
+[void]$PowerShell.AddArgument($tcpStream)
 [void]$PowerShell.AddArgument($baseDirectory)
+[void]$PowerShell.AddArgument("$PSScriptRoot/spec_chat_common.ps1")
 [void]$PowerShell.AddArgument($DebugPreference)
-[void]$PowerShell.AddArgument($test_run)
 
 $Handle = $PowerShell.BeginInvoke()
 
-while($true)
-{
-    Start-Sleep -Milliseconds 25
-        
-    if ([System.Console]::KeyAvailable)
-    {    
-        $key = [System.Console]::ReadKey()
-        if ($key.Key -eq '27') 
-        {
-            break;
-        }
-    }
-}
+Loop-UntilEscPressOrGameClosed
 
 $PowerShell.Dispose()
 
-if(-not $test_run)
-{
-    $writer.Close()
-    $reader.Close()
-    $tcpConnection.Close()
-}
+$binaryWriter.Close()
+$tcpConnection.Close()
