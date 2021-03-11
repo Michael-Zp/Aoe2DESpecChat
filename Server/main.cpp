@@ -67,6 +67,13 @@ typedef std::array<uint8_t, 128> MyKey;
 
 static_assert(BUF_SIZE >= sizeof(MyKey) + sizeof(GeneralHeader), "Key + protocol overhead can not be bigger than a BUF_SIZE");
 
+struct CasterData
+{
+    MyKey CurrentKey;
+    bool Run;
+    uint32_t SendMessages;
+};
+
 std::optional<MyKey> getKey(const uint8_t *buf, GeneralHeader *header)
 {
     if(header->Type == GeneralHeader::TypeKey)
@@ -194,28 +201,28 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
     *done = true;
 }
 
-void casterSendLoop(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int casterConnection, MyKey& key, bool& run)
+void casterSendLoop(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int casterConnection, CasterData& casterData)
 {
-    while(run)
+    while(casterData.Run)
     {
         MyKey currentKey;
-        memcpy(&currentKey, &key, sizeof(MyKey));
+        memcpy(&currentKey, &casterData.CurrentKey, sizeof(MyKey));
 
-        OutputMessages& outputMessages = (*headerToOutput)[key];
+        OutputMessages& outputMessages = (*headerToOutput)[currentKey];
 
         outputMessages.Mtx.lock();
 
-        for(int i = 0; i < outputMessages.Messages.size(); ++i)
+        for(int i = casterData.SendMessages; i < outputMessages.Messages.size(); ++i)
         {
             OutputMessageHeader *outHeader = reinterpret_cast<OutputMessageHeader*>(outputMessages.Messages[i].get());
 
      		if(DEBUG_MESSAGES)
-                std::cout << "Send to caster. Key: " << keyHashForDebugging(key) << " MessageLen: " << outHeader->Size << std::endl;
+                std::cout << "Send to caster. Key: " << keyHashForDebugging(casterData.CurrentKey) << " MessageLen: " << outHeader->Size << std::endl;
 
             send(casterConnection, outputMessages.Messages[i].get(), outHeader->Size, 0);
         }
 
-        outputMessages.Messages.clear();
+        casterData.SendMessages = outputMessages.Messages.size();
 
         outputMessages.Mtx.unlock();
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
@@ -228,11 +235,13 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
     uint8_t buf[BUF_SIZE];
     int readBytes;
 
-    MyKey key;
-    bool run = true;
     bool sendThreadStarted = false;
     bool hasKey = false;
     std::thread sendThread;
+
+    CasterData casterData;
+    casterData.Run = true;
+    casterData.SendMessages = 0;
 
     int notFinishedMessageSize = 0;
     while((readBytes = read(casterConnection, buf + notFinishedMessageSize, BUF_SIZE - 1 - notFinishedMessageSize)) > 0)
@@ -267,20 +276,21 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
 	        {
                 if(hasKey)
                 {
-        	        memcpy(&key, possibleKey.value().data(), sizeof(MyKey));
+        	        memcpy(&casterData.CurrentKey, possibleKey.value().data(), sizeof(MyKey));
+                    casterData.SendMessages = 0;
 
 	                if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
-	                    std::cout << "Updated caster key to: " << keyHashForDebugging(key) << std::endl;
+	                    std::cout << "Updated caster key to: " << keyHashForDebugging(casterData.CurrentKey) << std::endl;
                 }
                 else
                 {
-		            key = possibleKey.value();
+		            casterData.CurrentKey = possibleKey.value();
 		            hasKey = true;
         	        sendThreadStarted = true;
-       	            sendThread = std::thread(casterSendLoop, headerToOutput, casterConnection, std::ref(key), std::ref(run));
+       	            sendThread = std::thread(casterSendLoop, headerToOutput, casterConnection, std::ref(casterData));
 
 	                if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
-    		            std::cout << "Caster with key: " << keyHashForDebugging(key) << " connected." << std::endl;
+    		            std::cout << "Caster with key: " << keyHashForDebugging(casterData.CurrentKey) << " connected." << std::endl;
                 }
 	        }
 
@@ -296,12 +306,12 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
 
     if(sendThreadStarted)
     {
-    	run = false;
+    	casterData.Run = false;
 	    sendThread.join();
     }
 
     if(DEBUG_CONNECTIONS)
-    	std::cout << "Closing caster connection with key: " << keyHashForDebugging(key) << std::endl;
+    	std::cout << "Closing caster connection with key: " << keyHashForDebugging(casterData.CurrentKey) << std::endl;
 
     close(casterConnection);
 
