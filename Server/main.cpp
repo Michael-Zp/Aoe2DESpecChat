@@ -23,14 +23,38 @@
 #include <algorithm>
 
 
-#define DEBUG_MESSAGES 0
-#define DEBUG_CONNECTIONS 0
+#define DEBUG_MESSAGES 1
+#define DEBUG_CONNECTIONS 1
 
-static const int BUF_SIZE = 1024;
+static const uint64_t BUF_SIZE = 1024;
 
-typedef std::array<char, 128> MyKey;
+struct GeneralHeader
+{
+    uint16_t Size;
+    uint8_t Type;
 
-static_assert(BUF_SIZE >= sizeof(MyKey) + 3, "Key + protocol overhead can not be bigger than a BUF_SIZE");
+    static constexpr uint8_t TypeKey = 11;
+    static constexpr uint8_t TypeMessage = 22;
+};
+
+struct MessageHeader
+{
+    GeneralHeader General;
+    uint8_t PlayerNumber;
+};
+
+struct OutputMessageHeader
+{
+    uint16_t Size;
+    uint32_t PlayerID;
+    uint8_t PlayerNumber;
+};
+
+struct OutputMessages
+{
+    std::mutex Mtx;
+    std::vector<std::shared_ptr<uint8_t[]>> Messages;
+};
 
 struct ClientThread
 {
@@ -39,79 +63,48 @@ struct ClientThread
     bool Joined;
 };
 
-std::optional<MyKey> getKey(const char *buf, int len)
+typedef std::array<uint8_t, 128> MyKey;
+
+static_assert(BUF_SIZE >= sizeof(MyKey) + sizeof(GeneralHeader), "Key + protocol overhead can not be bigger than a BUF_SIZE");
+
+std::optional<MyKey> getKey(const uint8_t *buf, GeneralHeader *header)
 {
-    if(strncmp(buf, "Key", 3) == 0)
+    if(header->Type == GeneralHeader::TypeKey)
     {
-	MyKey ret;
-	memset(&ret, 0, sizeof(MyKey));
-	memcpy(&ret, buf + 3, len - 3);
-	ret[len - 3] = '\0';
-	return ret;
+    	MyKey ret;
+	    memset(&ret, 0, sizeof(MyKey));
+	    memcpy(&ret, buf + sizeof(GeneralHeader), header->Size - sizeof(GeneralHeader));
+	    return ret;
     }
     return {};
 }
 
-int keyHashForDebugging(const MyKey& key)
+uint64_t keyHashForDebugging(const MyKey& key)
 {
     uint64_t sum = 0;
     for(int i = 0; i < sizeof(MyKey); i++)
     {
-	sum += key[i];
+	    sum += key[i];
     }
     return sum;
 }
 
-std::atomic<uint64_t> nextID;
+std::atomic<uint32_t> nextID;
 
-uint64_t getNextID()
+uint32_t getNextID()
 {
     return nextID++;
 }
 
-struct MessageMetaData
+
+void managePlayerConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int playerConnection, bool* done)
 {
-    int MessageLength;
-    int MessageOffset;
-};
-
-std::optional<MessageMetaData> getMessageMetaData(char* buf, int maxLength)
-{
-    MessageMetaData ret;
-    for(int i = 0; i < maxLength; ++i)
-    {
-	if(buf[i] == ';')
-	{
-	    if(DEBUG_MESSAGES)
-	        std::cout << "Found message size at: " << i << std::endl;
-
-	    std::string lenString(buf, i);
-
-	    if(DEBUG_MESSAGES)
-	        std::cout << "Found message with length: " << lenString << " , where length string is " << lenString.size() << " characters long." << std::endl;
-
-	    ret.MessageLength = std::stoi(lenString);
-	    ret.MessageOffset = lenString.size() + 1;
-
-	    if(ret.MessageLength + ret.MessageOffset > maxLength)
-	    {
-		return {};
-	    }
-
-	    return ret;
-	}
-    }
-    return {};
-}
-
-void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int playerConnection, bool* done)
-{
-    char buf[BUF_SIZE];
-    int readBytes;
+    uint8_t buf[BUF_SIZE];
+    uint64_t readBytes;
 
     bool hasKey = false;
     MyKey key;
-    uint64_t id = getNextID();
+    uint32_t id = getNextID();
 
     if(DEBUG_CONNECTIONS)
         std::cout << "Player connection with ID " << id << " created." << std::endl;
@@ -119,101 +112,120 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
     int notFinishedMessageSize = 0;
     while((readBytes = read(playerConnection, buf + notFinishedMessageSize, BUF_SIZE - 1 - notFinishedMessageSize)) > 0)
     {
-	buf[readBytes] = '\0';
-
-	if(DEBUG_MESSAGES)
-	    std::cout << "Read player message: '" << buf << "' with length: " << readBytes << std::endl;
-
-	auto messageMetaData = getMessageMetaData(buf, readBytes);
-	int startOfNextMessage = 0;
-
-	while(messageMetaData.has_value() && (startOfNextMessage + messageMetaData.value().MessageLength) < readBytes)
-	{
-	    int startOfThisMessage = startOfNextMessage + messageMetaData.value().MessageOffset;
-	    std::string messageString(buf + startOfThisMessage, messageMetaData.value().MessageLength);
-	    startOfNextMessage = startOfThisMessage + messageMetaData.value().MessageLength;
+    	buf[readBytes] = '\0';
 
 	    if(DEBUG_MESSAGES)
-	        std::cout << "Len = " << messageMetaData.value().MessageLength << ". Start processing message: " << messageString << std::endl;
+	        std::cout << "Read player message: '" << buf << "' with length: " << readBytes << std::endl;
 
-	    auto possibleKey = getKey(messageString.c_str(), messageMetaData.value().MessageLength);
+        if(readBytes < sizeof(GeneralHeader))
+        {
+            notFinishedMessageSize = readBytes;
+            continue;
+        }
 
-	    if(possibleKey.has_value())
+	    int startOfNextMessage = 0;
+
+    	while(startOfNextMessage + sizeof(GeneralHeader) < readBytes)
 	    {
-		if(DEBUG_MESSAGES)
-		    std::cout << "Read player key" << std::endl;
+            uint8_t *currentBuf = buf + startOfNextMessage;
 
-		key = possibleKey.value();
-		hasKey = true;
+            GeneralHeader *genHeader = reinterpret_cast<GeneralHeader*>(currentBuf);
 
-		if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
-		    std::cout << "Player with key: " << keyHashForDebugging(key) << " connected." << std::endl;
-	    }
-	    else if(hasKey)
-	    {
-		auto outputPair = &(*headerToOutput)[key];
-		auto mtx = &outputPair->first;
-		auto outputVector = &outputPair->second;
+            if(startOfNextMessage + genHeader->Size > readBytes)
+            {
+                break;
+            }
 
-		std::stringstream outSs;
+            auto possibleKey = getKey(currentBuf, genHeader);
 
-		outSs << id << ";" << messageString << '\n';
+	        if(possibleKey)
+	        {
+		        if(DEBUG_MESSAGES)
+		            std::cout << "Read player key" << std::endl;
 
-		if(DEBUG_MESSAGES)
-		    std::cout << "Adding player message: " << outSs.str() << std::endl;
+		        key = possibleKey.value();
+		        hasKey = true;
 
-		mtx->lock();
-		outputVector->push_back(outSs.str());
-		mtx->unlock();
-	    }
+		        if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
+		            std::cout << "Player with key: " << keyHashForDebugging(key) << " connected." << std::endl;
+	        }
+	        else if(hasKey)
+	        {
+		        OutputMessages& outputMessages = (*headerToOutput)[key];
 
-	    messageMetaData = getMessageMetaData(buf + startOfNextMessage, readBytes - startOfNextMessage);
-	}
+                if(startOfNextMessage + genHeader->Size > readBytes)
+                {
+                    break;
+                }
 
-	notFinishedMessageSize = readBytes - startOfNextMessage;
-	memcpy(buf, buf + startOfNextMessage, notFinishedMessageSize);
+                uint32_t outMessageSize = genHeader->Size - sizeof(MessageHeader) + sizeof(OutputMessageHeader);
+                std::shared_ptr<uint8_t[]> message(new uint8_t[outMessageSize]);
+                MessageHeader *mesHeader = reinterpret_cast<MessageHeader*>(currentBuf);
+                OutputMessageHeader *outHeader = reinterpret_cast<OutputMessageHeader*>(message.get());
+                outHeader->Size = outMessageSize;
+                outHeader->PlayerID = id;
+                outHeader->PlayerNumber = mesHeader->PlayerNumber;
+                memcpy(message.get() + sizeof(OutputMessageHeader), currentBuf + sizeof(MessageHeader), genHeader->Size - sizeof(MessageHeader));
+
+                if(DEBUG_MESSAGES)
+                    std::cout << "Adding message with lenght " << outHeader->Size << " to " << outputMessages.Messages.size() << " in the outputMessages of this connection." << std::endl;
+
+		        outputMessages.Mtx.lock();
+		        outputMessages.Messages.push_back(message);
+		        outputMessages.Mtx.unlock();
+	        }
+
+            startOfNextMessage += genHeader->Size;
+    	}
+
+	    notFinishedMessageSize = readBytes - startOfNextMessage;
+	    memcpy(buf, buf + startOfNextMessage, notFinishedMessageSize);
+
+	    if(DEBUG_MESSAGES)
+	        std::cout << "Start waiting for next player message at: " << notFinishedMessageSize << std::endl;
     }
 
 
     if(DEBUG_CONNECTIONS)
-	std::cout << "Closing player connection with key: " << keyHashForDebugging(key) << std::endl;
+	    std::cout << "Closing player connection with key: " << keyHashForDebugging(key) << std::endl;
 
     close(playerConnection);
 
     *done = true;
 }
 
-void casterSendLoop(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterConnection, MyKey& key, bool& run)
+void casterSendLoop(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int casterConnection, MyKey& key, bool& run)
 {
     while(run)
     {
         MyKey currentKey;
         memcpy(&currentKey, &key, sizeof(MyKey));
 
-        auto outputPair = &(*headerToOutput)[currentKey];
-        auto mtx = &outputPair->first;
-        auto outputVector = &outputPair->second;
+        OutputMessages& outputMessages = (*headerToOutput)[key];
 
-        mtx->lock();
-        if(outputVector->size() > 0)
+        outputMessages.Mtx.lock();
+
+        for(int i = 0; i < outputMessages.Messages.size(); ++i)
         {
-            for(int i = 0; i < outputVector->size(); ++i)
-            {
-		if(DEBUG_MESSAGES)
-		    std::cout << "Send to caster. Key: " << keyHashForDebugging(key) << " Message: " << (*outputVector)[i] << std::endl;
+            OutputMessageHeader *outHeader = reinterpret_cast<OutputMessageHeader*>(outputMessages.Messages[i].get());
 
-	        send(casterConnection, (*outputVector)[i].c_str(), (*outputVector)[i].size(), 0);
-            }
-            outputVector->clear();
+     		if(DEBUG_MESSAGES)
+                std::cout << "Send to caster. Key: " << keyHashForDebugging(key) << " MessageLen: " << outHeader->Size << std::endl;
+
+            send(casterConnection, outputMessages.Messages[i].get(), outHeader->Size, 0);
         }
-        mtx->unlock();
+
+        outputMessages.Messages.clear();
+
+        outputMessages.Mtx.unlock();
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 }
 
-void manageCasterConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterConnection, bool* done)
+
+void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int casterConnection, bool* done)
 {
-    char buf[BUF_SIZE];
+    uint8_t buf[BUF_SIZE];
     int readBytes;
 
     MyKey key;
@@ -222,78 +234,74 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
     bool hasKey = false;
     std::thread sendThread;
 
-    int messageStart = 0;
-    while(!hasKey)
+    int notFinishedMessageSize = 0;
+    while((readBytes = read(casterConnection, buf + notFinishedMessageSize, BUF_SIZE - 1 - notFinishedMessageSize)) > 0)
     {
-        readBytes = read(casterConnection, buf + messageStart, BUF_SIZE - messageStart - 1);
+    	buf[readBytes] = '\0';
 
-	if(readBytes <= 0)
-	{
-	    break;
-	}
+	    if(DEBUG_MESSAGES)
+	        std::cout << "Read caster message: '" << buf << "' with length: " << readBytes << std::endl;
 
-	buf[readBytes] = '\0';
+        if(readBytes < sizeof(GeneralHeader))
+        {
+            notFinishedMessageSize = readBytes;
+            continue;
+        }
 
-	auto messageMetaData = getMessageMetaData(buf, readBytes);
+	    int startOfNextMessage = 0;
 
-	if(messageMetaData.has_value())
-	{
-            auto possibleKey = getKey(buf + messageMetaData.value().MessageOffset, messageMetaData.value().MessageLength);
-
-	    if(possibleKey.has_value())
+    	while(startOfNextMessage + sizeof(GeneralHeader) < readBytes)
 	    {
-	        key = possibleKey.value();
-	        hasKey = true;
+            uint8_t *currentBuf = buf + startOfNextMessage;
 
-	        if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
-		    std::cout << "Caster with key: " << keyHashForDebugging(key) << " connected." << std::endl;
-	    }
+            GeneralHeader *genHeader = reinterpret_cast<GeneralHeader*>(currentBuf);
 
-	    if(hasKey)
+            if(startOfNextMessage + genHeader->Size > readBytes)
             {
-	        sendThreadStarted = true;
-	        sendThread = std::thread(casterSendLoop, headerToOutput, casterConnection, std::ref(key), std::ref(run));
+                break;
             }
-	}
-	else
-	{
-	    messageStart = readBytes;
-	}
-    }
 
-    messageStart = 0;
-    while((readBytes = read(casterConnection, buf + messageStart, BUF_SIZE - messageStart - 1)) > 0)
-    {
-	buf[readBytes] = '\0';
+            auto possibleKey = getKey(currentBuf, genHeader);
 
-	auto messageMetaData = getMessageMetaData(buf, readBytes);
+	        if(possibleKey)
+	        {
+                if(hasKey)
+                {
+        	        memcpy(&key, possibleKey.value().data(), sizeof(MyKey));
 
-	if(messageMetaData.has_value())
-	{
-            auto possibleKey = getKey(buf + messageMetaData.value().MessageOffset, messageMetaData.value().MessageLength);
+	                if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
+	                    std::cout << "Updated caster key to: " << keyHashForDebugging(key) << std::endl;
+                }
+                else
+                {
+		            key = possibleKey.value();
+		            hasKey = true;
+        	        sendThreadStarted = true;
+       	            sendThread = std::thread(casterSendLoop, headerToOutput, casterConnection, std::ref(key), std::ref(run));
 
-	    if(possibleKey.has_value())
-	    {
-	        memcpy(&key, possibleKey.value().data(), sizeof(MyKey));
+	                if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
+    		            std::cout << "Caster with key: " << keyHashForDebugging(key) << " connected." << std::endl;
+                }
+	        }
 
-	        if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
-	            std::cout << "Updated caster key to: " << keyHashForDebugging(key) << std::endl;
-	    }
-	}
-	else
-	{
-	    messageStart = readBytes;
-	}
+            startOfNextMessage += genHeader->Size;
+    	}
+
+	    notFinishedMessageSize = readBytes - startOfNextMessage;
+	    memcpy(buf, buf + startOfNextMessage, notFinishedMessageSize);
+
+	    if(DEBUG_MESSAGES)
+	        std::cout << "Start waiting for next caster message at: " << notFinishedMessageSize << std::endl;
     }
 
     if(sendThreadStarted)
     {
-	run = false;
-	sendThread.join();
+    	run = false;
+	    sendThread.join();
     }
 
     if(DEBUG_CONNECTIONS)
-	std::cout << "Closing caster connection with key: " << keyHashForDebugging(key) << std::endl;
+    	std::cout << "Closing caster connection with key: " << keyHashForDebugging(key) << std::endl;
 
     close(casterConnection);
 
@@ -302,17 +310,18 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, std::pair<std::mutex
 
 
 
-void waitForPlayers(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int playerSocket)
+void waitForPlayers(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int playerSocket)
 {
     std::vector<ClientThread> playerThreads;
     while(true)
     {
         int playerConnection = accept(playerSocket, (struct sockaddr*)NULL, NULL);
-	if(DEBUG_CONNECTIONS)
+
+    	if(DEBUG_CONNECTIONS)
             std::cout << "Player connected." << std::endl;
 
         bool *done = new bool;
-	*done = false;
+    	*done = false;
         std::thread thread(managePlayerConnection, headerToOutput, playerConnection, done);
         playerThreads.push_back({std::move(thread), done, false});
 
@@ -321,33 +330,33 @@ void waitForPlayers(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::v
             if(*pt.Done)
             {
                 pt.Thread.join();
-		pt.Joined = true;
+	        	pt.Joined = true;
             }
         }
 
-	for(int i = 0; i < playerThreads.size(); ++i)
-	{
-	    if(*(playerThreads[i].Done) && playerThreads[i].Joined)
+    	for(int i = 0; i < playerThreads.size(); ++i)
 	    {
-		playerThreads.erase(playerThreads.begin() + i);
-		--i;
-	    }
-	}
-
+	        if(*(playerThreads[i].Done) && playerThreads[i].Joined)
+	        {
+		        playerThreads.erase(playerThreads.begin() + i);
+    		    --i;
+	        }
+    	}
     }
 }
 
-void waitForCasters(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>> headerToOutput, int casterSocket)
+void waitForCasters(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int casterSocket)
 {
     std::vector<ClientThread> casterThreads;
     while(true)
     {
         int casterConnection = accept(casterSocket, (struct sockaddr*)NULL, NULL);
-	if(DEBUG_CONNECTIONS)
+
+    	if(DEBUG_CONNECTIONS)
             std::cout << "Caster connected." << std::endl;
 
         bool *done = new bool;
-	*done = false;
+    	*done = false;
         std::thread thread(manageCasterConnection, headerToOutput, casterConnection, done);
         casterThreads.push_back({std::move(thread), done, false});
 
@@ -355,19 +364,19 @@ void waitForCasters(std::shared_ptr<std::map<MyKey, std::pair<std::mutex, std::v
         {
             if(*ct.Done)
             {
-		ct.Thread.join();
-		ct.Joined = true;
+	        	ct.Thread.join();
+        		ct.Joined = true;
             }
         }
 
-	for(int i = 0; i < casterThreads.size(); ++i)
-	{
-	    if(*(casterThreads[i].Done) && casterThreads[i].Joined)
+    	for(int i = 0; i < casterThreads.size(); ++i)
 	    {
-		casterThreads.erase(casterThreads.begin() + i);
-		--i;
+	        if(*(casterThreads[i].Done) && casterThreads[i].Joined)
+    	    {
+	        	casterThreads.erase(casterThreads.begin() + i);
+		        --i;
+    	    }
 	    }
-	}
     }
 }
 
@@ -420,7 +429,7 @@ int main()
     bind(playerSocket, (struct sockaddr*)&ipOfServer , sizeof(ipOfServer));
     listen(playerSocket, 20);
 
-    auto headerToOutput = std::make_shared<std::map<MyKey, std::pair<std::mutex, std::vector<std::string>>>>();
+    auto headerToOutput = std::make_shared<std::map<MyKey, OutputMessages>>();
 
     std::thread waitForPlayersThread(waitForPlayers, headerToOutput, playerSocket);
     std::thread waitForCastersThread(waitForCasters, headerToOutput, casterSocket);

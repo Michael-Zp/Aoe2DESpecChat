@@ -4,6 +4,7 @@ project(AoE2DESpecChat_Server VERSION 0.1)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
+set(CMAKE_BUILD_TYPE Debug)
 
 add_executable(AoE2DESpecChat_Server main.cpp)
 
