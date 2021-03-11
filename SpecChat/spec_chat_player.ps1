@@ -1,6 +1,7 @@
 ﻿. "$PSScriptRoot/spec_chat_common.ps1"
 
 $DebugPreference = "Continue"
+$release = $false
 
 $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40321)
 $tcpStream = $tcpConnection.GetStream()
@@ -132,3 +133,8 @@ $PowerShell.Dispose()
 
 $binaryWriter.Close()
 $tcpConnection.Close()
+
+if($release)
+{
+    Stop-Process -Id $PID
+}

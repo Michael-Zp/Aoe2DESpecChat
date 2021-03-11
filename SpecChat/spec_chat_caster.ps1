@@ -1,6 +1,7 @@
 ﻿. "$PSScriptRoot/spec_chat_common.ps1"
 
 $DebugPreference = "Continue"
+$release = $false
 
 $PowerShell = [powershell]::Create()
 
@@ -234,3 +235,8 @@ $PowerShell.Dispose()
 
 $binaryWriter.Close()
 $tcpConnection.Close()
+
+if($release)
+{
+    Stop-Process -Id $PID
+}
