@@ -1,6 +1,7 @@
 ﻿. "$PSScriptRoot/spec_chat_common.ps1"
 
 $DebugPreference = "Continue"
+$release = $false
 
 $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40321)
 $tcpStream = $tcpConnection.GetStream()
@@ -100,7 +101,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                             [System.Array]::Copy($headerArr, $outArr, $headerArr.Count)
                             [System.Array]::Copy($textBytes, 0, $outArr, $headerArr.Count, $textBytes.Count)
 
-                            Write-Debug "Send Line: $line"
+                            Write-Debug "Send Line: $line from player $($outArr[3])"
                             Write-Debug $outArr[0]
                             $binaryWriter.Write($outArr)
                         }
@@ -132,3 +133,8 @@ $PowerShell.Dispose()
 
 $binaryWriter.Close()
 $tcpConnection.Close()
+
+if($release)
+{
+    Stop-Process -Id $PID
+}

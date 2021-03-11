@@ -1,6 +1,7 @@
 ﻿. "$PSScriptRoot/spec_chat_common.ps1"
 
 $DebugPreference = "Continue"
+$release = $false
 
 $PowerShell = [powershell]::Create()
 
@@ -50,6 +51,8 @@ $PowerShell.Streams.Debug.Add_DataAdded({
     
     $buf = New-Object -TypeName 'byte[]' -ArgumentList 1024
 
+    $notFinishedMessageSize = 0
+
     while($true)
     {
         if((Get-LatestRecPath) -ne $currentMatch)
@@ -67,7 +70,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
             Update-Key $binaryWriter
         }
 
-        $task = $tcpStream.ReadAsync($buf, 0, 1024)
+        $task = $tcpStream.ReadAsync($buf, $notFinishedMessageSize, $buf.Count - $notFinishedMessageSize)
 
         while (-not $task.AsyncWaitHandle.WaitOne(200))
         {
@@ -90,21 +93,31 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
         $readBytes = $task.GetAwaiter().GetResult()
         
+        $startOfNextMessage = 0
+        $availableBytes = $readBytes
 
-        if($readBytes -gt 0)
+        # While there is enough data for at least a header to exist
+        while($availableBytes -ge 7)
         {
-            Write-Debug "Read message with $readBytes bytes"
-
             $byteValue0 = 1
             $byteValue1 = ([System.Math]::Pow(2, 8) - 1)
             $byteValue2 = ([System.Math]::Pow(2, 16) - 1)
             $byteValue3 = ([System.Math]::Pow(2, 24) - 1)
-            $lineLength = $buf[0] * $byteValue0 + $buf[1] * $byteValue1
-            $playerID =  $buf[2] * $byteValue0 + $buf[3] * $byteValue1 + $buf[4] * $byteValue2 + $buf[5] * $byteValue3
-            $playerInGameNumber = $buf[6]
-            $messageText = ([System.Text.Encoding]::Unicode).GetString($buf, 6, $lineLength - 6)
+            $lineLength = $buf[$startOfNextMessage + 0] * $byteValue0 + $buf[$startOfNextMessage + 1] * $byteValue1
+            $playerID = $buf[$startOfNextMessage + 2] * $byteValue0 + $buf[$startOfNextMessage + 3] * $byteValue1
+            $playerID += $buf[$startOfNextMessage + 4] * $byteValue2 + $buf[$startOfNextMessage + 5] * $byteValue3
+            $playerInGameNumber = $buf[$startOfNextMessage + 6]
 
-            Write-Debug "Read message: $messageText with line length: $lineLength"
+            if($availableBytes -lt $lineLength)
+            {
+                break;
+            }
+            
+            Write-Debug "Read message with $readBytes bytes"
+
+            $messageText = ([System.Text.Encoding]::Unicode).GetString($buf, $startOfNextMessage + 7, $lineLength - 7)
+
+            Write-Debug "Read message: $messageText from player $playerInGameNumber with line length: $lineLength"
         
             $foundDuplicate = $false
 
@@ -172,11 +185,14 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                     }
                 }
             }
+                
+            $startOfNextMessage = $startOfNextMessage + $lineLength
+            $availableBytes = $availableBytes - $lineLength
+            
+
         }
-        else
-        {
-            break;
-        }
+        
+        $notFinishedMessageSize = $readBytes - $startOfNextMessage
     }
 })
 
@@ -219,3 +235,8 @@ $PowerShell.Dispose()
 
 $binaryWriter.Close()
 $tcpConnection.Close()
+
+if($release)
+{
+    Stop-Process -Id $PID
+}
