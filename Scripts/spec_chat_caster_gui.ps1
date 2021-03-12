@@ -1,4 +1,9 @@
-﻿$debug = $false
+﻿$DebugPreference = "Continue"
+
+. "$PSScriptRoot/spec_chat_common.ps1"
+
+
+
 #-------------------------------------------------------------#
 #----Initial Declarations-------------------------------------#
 #-------------------------------------------------------------#
@@ -94,7 +99,7 @@ function Update-Chat()
         {
             try
             {
-                $allLines = (Get-Content $file) -split "\n"
+                $allLines = (Get-Content $file -Encoding Unicode) -split "\n"
                 $fileRead = $true
             }
             catch
@@ -150,12 +155,7 @@ function Update-Chat()
 #----Script Execution-----------------------------------------#
 #-------------------------------------------------------------#
     
-$global:baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
-    
-if(-not (Test-Path $global:baseDirectory))
-{
-    mkdir $global:baseDirectory | Out-Null
-}
+$global:baseDirectory = Get-BaseDir
  
 $reader=(New-Object System.Xml.XmlNodeReader $xaml)
 $Window=[Windows.Markup.XamlReader]::Load( $reader )
@@ -178,7 +178,7 @@ $Window.Add_Loaded({
     # Now start the timer running            
     $timer.Start()  
     if( $timer.IsEnabled -eq $false) { 
-       write-warning "Timer didn't start"      
+       Write-Debug "Timer didn't start"      
     }  
 })
 
@@ -192,17 +192,7 @@ $Window.Add_KeyDown({
     {
         if($Global:LinesRead -ne 0)
         {
-            $chatBackupFile = (Get-Date -Format "yyyyMMdd_hhmmss") + ".txt"
-
-            if(-not (Test-Path "$global:baseDirectory/backups"))
-            {
-                mkdir "$global:baseDirectory/backups" | Out-Null
-            }
-
-            if(Test-Path "$global:baseDirectory/currentChat.txt")
-            {
-                Move-Item "$global:baseDirectory/currentChat.txt" "$global:baseDirectory/backups/$chatBackupFile" | Out-Null
-            }
+            Push-Backup
 
             $observableCollection.clear()
             $Global:LinesRead = 0

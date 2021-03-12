@@ -2,6 +2,12 @@
 
 $DebugPreference = "Continue"
 $release = $false
+if($args.Count -gt 0)
+{
+    $release = $args[0]
+}
+
+Write-Debug "Started with release = $release"
 
 $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40321)
 $tcpStream = $tcpConnection.GetStream()
@@ -126,7 +132,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
 $Handle = $PowerShell.BeginInvoke()
 
-Loop-UntilEscPressOrGameClosed
+Loop-UntilEscPressOrGameClosed $release
 
 $PowerShell.Dispose()
 
