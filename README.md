@@ -41,6 +41,13 @@
     * Why no .bat file you ask? For some reason batch files only start if a full path is used. (So starting from the drive letter C/D/H and so on)
     * This would make it even harder to use as for the exe files I can use relative pathing. Otherwise the user aka you might have to create ceratin folders and this is too much of a hassle honestly.
 
+  * Why starters (like start_spec_chat_player.exe)
+    * Because in the player and caster scripts I have to open a TCP connection to the server, but if I do that PS2EXE will not compile the script into an exe.
+    * This has a good reason, because some *insert your prefered cuss word* used PS2EXE to compile a script that contained malware and now anti virus programs recognize these exes as viruses.
+    * Because of this *cuss word* the creater of PS2EXE simply implemented a check if such features were used and will not compile those scripts to prevent a further spread of false positive virus reports.
+    * That's why I use the starters, because the simpler scripts are compilable.
+    * Additionally with starters it is much easier to redirect output streams like errors or warnings into log files.
+
   * Why not only use a mod.
     * Well because I can not (and should not be able to) ship any executable code with a mod. This would be a security hazard so it is good as it is.
     * The only theoretical way I imagined to do it without additional code is by leveraging the Hyperlink in the UI and sending messages to a Rest webservice.
