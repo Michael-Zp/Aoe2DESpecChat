@@ -1,7 +1,7 @@
 ﻿Add-Type -Assembly "System.IO.Compression"
 Add-Type -Assembly "System.Runtime"
 
-$fileName = "single"
+$fileName = "multipleDifferentBots"
 $filePath = "$PSScriptRoot/Replay/$fileName.aoe2record"
 $outputPath = "$PSScriptRoot/DeflateHeader/$fileName"
 $inFileStream = [System.IO.File]::OpenRead($filePath)

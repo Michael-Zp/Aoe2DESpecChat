@@ -147,49 +147,68 @@ function Get-Names
 
     $ret = @()
 
-    $binaryReader = [System.IO.BinaryReader]([System.IO.File]::OpenRead($deflatedPath))
+    $binaryReader = [System.IO.BinaryReader]([System.IO.File]::OpenRead($filePath))
 
-    $header = New-Object -TypeName 'byte[]' -ArgumentList 1024
+    $header = New-Object -TypeName 'byte[]' -ArgumentList 2048
 
     [void]$binaryReader.Read($header, 0, $header.Count)
     $binaryReader.Close()
 
-    Remove-Item $outputPath
-
     $numPlayers = $header[0x74]
 
-    Write-Debug "There are $numPlayers players"
+    Write-Host "There are $numPlayers players"
 
     $currentIdx = 0xA3
+    $suffixLength = 0
+
+    $sectionOffsets = @(0, 5, 4)
 
     for($i = 0; $i -lt $numPlayers; ++$i)
     {
         $playerNum = $header[$currentIdx] + 1
-        $currentIdx += (0xC4 - 0xA3)
-        $nameStartIdx = $currentIdx
-        $nameLength = 0
+        $currentIdx += 16 + 4 # offset of 1 rows 4 columns in any hex editor
 
-        while($header[$currentIdx] -ne 0x02)
+        $sections = @()
+        $sections += [PScustomObject]@{
+            Start = $currentIdx
+            Length = 0
+            String = ""
+        }
+
+        for($k = 0; $k -lt 3; ++$k)
         {
-            ++$currentIdx
-            ++$nameLength
+            $nextStart = $sections[$k].Start + $sectionOffsets[$k] + $sections[$k].Length
+            $nextLength = $header[$nextStart + 2]
+            $nextString = [System.Text.Encoding]::UTF8.GetString($header, $nextStart + 4, $nextLength)
+            
+            $sections += [PSCustomObject]@{
+                Start = $nextStart
+                Length = $nextLength
+                String = $nextString
+            }
         }
-
-        $playerName = [System.Text.Encoding]::UTF8.GetString($header, $nameStartIdx, $nameLength)
-
-        $currentIdx += (0xE8 - 0xCA)
-
-        $ret += [PSCustomObject]@{
-            Number = $playerNum
-            Name = $playerName
+        
+        if($sections[1].Length -gt 0)
+        {
+            $ret += [PSCustomObject]@{
+                Number = $playerNum
+                Name = $sections[2].String
+            }
         }
+        else
+        {
+            $ret += [PSCustomObject]@{
+                Number = $playerNum
+                Name = $sections[3].String
+            }
+        }
+        
+        $currentIdx = $sections[3].Start + $sections[3].Length + 16 + 16 + 2 # offset of 2 rows 2 columns in any hex editor
 
-        Write-Debug "Player $playerNum is called $playerName"
+        Write-Host "Player $playerNum is called $playerName"
     }
 
-    $ret = $ret | Sort-Object Number
-
-    return $ret
+    return $ret | Sort-Object Number
 }
 
 function Loop-UntilEscPressOrGameClosed
