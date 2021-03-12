@@ -18,7 +18,7 @@
 
 # How to install and use
   * Download the latest release from this repo (should be on the right side of this website)
-  * Optional: Install the mod https://www.ageofempires.com/mods/details/21519/ in your game from the mod launcher (if not already done)
+  * Optional: Install the mod https://www.ageofempires.com/mods/details/21530/ in your game from the mod launcher (if not already done)
     * This will make it easier to start the programs from within the game instead of going through the file explorer
   * Drop every .exe file and .ps1 file from release into the root directory of AoE2 DE (same directory as e.g. AoE2DE_s.exe; steam_api.dll...)
     * If you have trouble finding it, right click in steam on the game, Properties, Local Files, Browse
