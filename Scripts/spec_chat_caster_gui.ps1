@@ -114,24 +114,15 @@ function Update-Chat()
             $contentChanged = $true
             $Global:LinesRead = 0
 
-            foreach($currentLine in $allLines)
+            for($i = 0; $i + 2 -lt $allLines.Length; $i += 3)
             {
-                $Global:LinesRead = $Global:LinesRead + 1
+                $Global:LinesRead = $Global:LinesRead + 3
 
-                $playerNumber = $currentLine[0]
+                $playerNumber = $allLines[$i + 0]
+                $playerName = $allLines[$i + 1]
+                $message = $allLines[$i + 2]
 
-                if(-not ($playerNumber -match "\d"))
-                {
-                    #If there is ever a need for system messages or similar
-                    $playerNumber = 9
-                    $chatLine = $currentLine
-                    continue
-                }
-                else
-                {
-                    $chatLine = "Player $($playerNumber): $($currentLine.Substring(1))"
-                }
-
+                $chatLine = "$($playerName): $message"
                  
                 $observableCollection.Add([PSCustomObject]@{
                     ChatLine = $chatLine
@@ -196,6 +187,7 @@ $Window.Add_KeyDown({
 
             $observableCollection.clear()
             $Global:LinesRead = 0
+
             Update-Chat
         }
     } 

@@ -35,6 +35,27 @@ function Get-LatestRecPath
     return $file
 }
 
+function Deflate-Replay
+{
+    Param(
+        $inputPath,
+        $outputPath
+    )
+    
+    Add-Type -Assembly "System.IO.Compression"
+
+    $inFileStream = [System.IO.File]::OpenRead($inputPath)
+    [void]$inFileStream.Seek(8, 'Begin')
+    $outFileStream = [System.IO.File]::OpenWrite($outputPath)
+    $deflateStream = New-Object System.IO.Compression.DeflateStream($inFileStream, [System.IO.Compression.CompressionMode]::Decompress)
+    
+    $deflateStream.CopyTo($outFileStream)
+
+    $outFileStream.Close()
+    $inFileStream.Close()
+    $deflateStream.Close()
+}
+
 function Get-Key
 {
     [OutputType([char[]])]
@@ -50,16 +71,7 @@ function Get-Key
 
     Copy-Item $filePath $inputPath
 
-    $inFileStream = [System.IO.File]::OpenRead($inputPath)
-    [void]$inFileStream.Seek(8, 'Begin')
-    $outFileStream = [System.IO.File]::OpenWrite($outputPath)
-    $deflateStream = New-Object System.IO.Compression.DeflateStream($inFileStream, [System.IO.Compression.CompressionMode]::Decompress)
-    
-    $deflateStream.CopyTo($outFileStream)
-
-    $outFileStream.Close()
-    $inFileStream.Close()
-    $deflateStream.Close()
+    Deflate-Replay $inputPath $outputPath
 
     Remove-Item $inputPath
 
@@ -116,6 +128,68 @@ function Update-Key
     $binaryWriter.Write($key)
     Write-Debug "Wrote $($key.Count) bytes as key"
     $binaryWriter.Flush()
+}
+
+function Get-Names
+{
+    Param(
+        $filePath
+    )
+    
+    $inputPath = (New-TemporaryFile).FullName
+    $deflatedPath = (New-TemporaryFile).FullName
+
+    Copy-Item $filePath $inputPath
+
+    Deflate-Replay $inputPath $deflatedPath
+
+    Remove-Item $inputPath
+
+    $ret = @()
+
+    $binaryReader = [System.IO.BinaryReader]([System.IO.File]::OpenRead($deflatedPath))
+
+    $header = New-Object -TypeName 'byte[]' -ArgumentList 1024
+
+    [void]$binaryReader.Read($header, 0, $header.Count)
+    $binaryReader.Close()
+
+    Remove-Item $outputPath
+
+    $numPlayers = $header[0x74]
+
+    Write-Debug "There are $numPlayers players"
+
+    $currentIdx = 0xA3
+
+    for($i = 0; $i -lt $numPlayers; ++$i)
+    {
+        $playerNum = $header[$currentIdx] + 1
+        $currentIdx += (0xC4 - 0xA3)
+        $nameStartIdx = $currentIdx
+        $nameLength = 0
+
+        while($header[$currentIdx] -ne 0x02)
+        {
+            ++$currentIdx
+            ++$nameLength
+        }
+
+        $playerName = [System.Text.Encoding]::UTF8.GetString($header, $nameStartIdx, $nameLength)
+
+        $currentIdx += (0xE8 - 0xCA)
+
+        $ret += [PSCustomObject]@{
+            Number = $playerNum
+            Name = $playerName
+        }
+
+        Write-Debug "Player $playerNum is called $playerName"
+    }
+
+    $ret = $ret | Sort-Object Number
+
+    return $ret
 }
 
 function Loop-UntilEscPressOrGameClosed

@@ -54,7 +54,11 @@ $PowerShell.Streams.Debug.Add_DataAdded({
     }
 
     $currentMatch = Get-LatestRecPath
+
+    Write-Debug "Opening match: $currentMatch"
     
+    $names = Get-Names $currentMatch
+
     $buf = New-Object -TypeName 'byte[]' -ArgumentList (1024 * 50)
 
     $notFinishedMessageSize = 0
@@ -74,6 +78,8 @@ $PowerShell.Streams.Debug.Add_DataAdded({
             Push-Backup
 
             Update-Key $binaryWriter
+
+            $names = Get-Names $currentMatch
         }
 
         $task = $tcpStream.ReadAsync($buf, $notFinishedMessageSize, $buf.Count - $notFinishedMessageSize)
@@ -93,6 +99,8 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                 Push-Backup
 
                 Update-Key $binaryWriter
+                
+                $names = Get-Names $currentMatch
             }
         }
 
@@ -174,15 +182,50 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                 $lastMessages[$currentMessage].Text               = $messageText
                 $lastMessages[$currentMessage].Timestamp          = [int][double]::Parse((Get-Date -UFormat %s))
 
-                $lineWritten = $false
-
-                while(-not $lineWritten)
+                $numberWritten = $false
+                
+                while(-not $numberWritten)
                 {
-                    $outLine = "$($lastMessages[$currentMessage].PlayerInGameNumber)$($lastMessages[$currentMessage].Text)"
+                    $outLine = "$($lastMessages[$currentMessage].PlayerInGameNumber)"
+                    $outLine = $outLine -replace '\n',''
                     try
                     {
                         $outLine | Out-File -FilePath "$(Get-BaseDir)/currentChat.txt" -Encoding Unicode -Append
-                        $lineWritten = $true
+                        $numberWritten = $true
+                    }
+                    catch
+                    {
+                        Start-Sleep -Milliseconds (Get-Random -Minimum 70 -Maximum 120)
+                    }
+                }
+
+                $nameWritten = $false
+
+                while(-not $nameWritten)
+                {
+                    $outLine = "$($names[$lastMessages[$currentMessage].PlayerInGameNumber - 1].Name)"
+                    $outLine = $outLine -replace '\n',''
+                    try
+                    {
+                        $outLine | Out-File -FilePath "$(Get-BaseDir)/currentChat.txt" -Encoding Unicode -Append
+                        $nameWritten = $true
+                    }
+                    catch
+                    {
+                        Start-Sleep -Milliseconds (Get-Random -Minimum 70 -Maximum 120)
+                    }
+                }
+
+                $messageWritten = $false
+
+                while(-not $messageWritten)
+                {
+                    $outLine = "$($lastMessages[$currentMessage].Text)"
+                    $outLine = $outLine -replace '\n',''
+                    try
+                    {
+                        $outLine | Out-File -FilePath "$(Get-BaseDir)/currentChat.txt" -Encoding Unicode -Append
+                        $messageWritten = $true
                     }
                     catch
                     {

@@ -24,7 +24,7 @@ function Get-LogFile
         mkdir $logPath | Out-Null
     }
 
-    return "$($logPath)$(Get-Date -Format "yyyyMMdd_hhmmss")_$suffix.log"
+    return "$($logPath)/$(Get-Date -Format "yyyyMMdd_hhmmss")_$suffix.log"
 }
 
 $logFile = Get-LogFile "caster_gui"
