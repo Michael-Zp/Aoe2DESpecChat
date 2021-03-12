@@ -107,7 +107,7 @@ uint32_t getNextID()
 void managePlayerConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int playerConnection, bool* done)
 {
     uint8_t buf[BUF_SIZE];
-    uint64_t readBytes;
+    ssize_t readBytes;
 
     bool hasKey = false;
     MyKey key;
@@ -233,7 +233,7 @@ void casterSendLoop(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOut
 void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int casterConnection, bool* done)
 {
     uint8_t buf[BUF_SIZE];
-    int readBytes;
+    ssize_t readBytes;
 
     bool sendThreadStarted = false;
     bool hasKey = false;
