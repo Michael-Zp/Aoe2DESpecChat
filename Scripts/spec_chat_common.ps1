@@ -145,7 +145,7 @@ function Loop-UntilEscPressOrGameClosed
                 }
             }
         }
-        elseif($breakIfGameIsClosed -and ((Get-Process | Where-Object { $_.Name -eq "AoE2DE_s" }).Count) -lt 1)
+        elseif($release -and ((Get-Process | Where-Object { $_.Name -eq "AoE2DE_s" }).Count) -lt 1)
         {
             break;
         }
