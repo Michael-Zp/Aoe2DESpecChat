@@ -1,7 +1,8 @@
 # Aoe2DESpecChat
-  * Befor using please read at least the Limitations, Prerequisites, How it works and How to install.
+  * Before using please read at least the Limitations, Prerequisites, How it works and How to install.
   * This is a test to enable spec chat in AoE 2 DE. It is janky and definitly not a good solution, but it kind of works.
   * My code is also jank so please don't judge. (Or do if you want, I am a README not a law.)
+  * Here is a video link for how to install and use it: https://www.youtube.com/watch?v=a2CqNbpaFvk
 
 # Limitations
   * Only the chat the players see, and who are running the program in the background, can be send to the spectators.
@@ -17,9 +18,9 @@
 
 # How to install and use
   * Download the latest release from this repo (should be on the right side of this website)
-  * Optional: Install the mod <a href="https://www.ageofempires.com/mods/details/21519/">Spec Chat by Vulpes1234</a> in your game from the mod launcher (if not already done)
+  * Optional: Install the mod https://www.ageofempires.com/mods/details/21519/ in your game from the mod launcher (if not already done)
     * This will make it easier to start the programs from within the game instead of going through the file explorer
-  * Drop every .exe file and .ps1 file from the Scripts folder into the root directory of AoE2 DE (same directory as e.g. AoE2DE_s.exe; steam_api.dll...)
+  * Drop every .exe file and .ps1 file from release into the root directory of AoE2 DE (same directory as e.g. AoE2DE_s.exe; steam_api.dll...)
     * If you have trouble finding it, right click in steam on the game, Properties, Local Files, Browse
   * After that you can start Age and now start either the player or spectator programs from within the game with the mod or through the file explorer.
   * There will be no feedback if they are started correctly so just press it once and it should work.
@@ -59,3 +60,6 @@
     * So yeah as long as there is no way trigger it and build the request this will be hard.
     * Maybe instead of going on update of the chat box it would be possible to catch the 'Enter' press from the speaking player?
     * I don't know hit me with ideas if anyone has some.
+
+# Shoutouts
+  * Thanks stefan-kolb for this https://github.com/stefan-kolb/aoc-mgx-format. Helped a lot with understanding the replay format.
