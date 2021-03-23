@@ -23,7 +23,6 @@
   * Drop every .exe file and .ps1 file from release into the root directory of AoE2 DE (same directory as e.g. AoE2DE_s.exe; steam_api.dll...)
     * If you have trouble finding it, right click in steam on the game, Properties, Local Files, Browse
   * After that you can start Age and now start either the player or spectator programs from within the game with the mod or through the file explorer.
-  * There will be no feedback if they are started correctly so just press it once and it should work.
 
 # If you don't want to run wild exes from the internet:
   * Congratulations, you passed your first test of competency in the internet and here is how you can verify what is done in these programs.
