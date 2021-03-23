@@ -1,4 +1,4 @@
-#This should be in the common file, but then it is not compilable
+#This should be in the common file, but then it is not compilable as it does not support includes
 function Get-BaseDir
 {
     $baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
@@ -25,6 +25,13 @@ function Get-LogFile
     }
 
     return "$($logPath)/$(Get-Date -Format "yyyyMMdd_hhmmss")_$suffix.log"
+}
+
+$processName = (Get-Process -Id $PID)[0].ProcessName
+
+if((Get-Process -Name $processName).Count -gt 1)
+{
+    return
 }
 
 $logFile = Get-LogFile "caster_gui"

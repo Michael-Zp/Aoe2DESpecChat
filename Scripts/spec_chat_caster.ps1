@@ -9,6 +9,18 @@ if($args.Count -gt 0)
 
 Write-Debug "Started with release = $release"
 
+$gameRootPath = Get-GameRootPath
+
+if($gameRootPath -eq "" -and $release -eq $false)
+{
+    $gameRootPath = "H:\SteamLibrary\steamapps\common\AoE2DE" # This is for my pc if I want to test stuff, if any other person wants to work on this in debug mode they have to change this. Sorry. Vulpes / Michael-Zp
+}
+
+$programPart = [ProgramPartNames]::Caster
+$newStatus = [Status]::Running
+
+Set-Status $gameRootPath $programPart $newStatus
+
 $PowerShell = [powershell]::Create()
 
 $PowerShell.Streams.Debug.Add_DataAdded({
@@ -275,10 +287,17 @@ $Handle = $PowerShell.BeginInvoke()
 
 Loop-UntilEscPressOrGameClosed $release
 
+Write-Debug "End of loop"
+
 $PowerShell.Dispose()
 
 $binaryWriter.Close()
 $tcpConnection.Close()
+
+$programPart = [ProgramPartNames]::Caster
+$newStatus = [Status]::Stopped
+
+Set-Status $gameRootPath $programPart $newStatus
 
 if($release)
 {

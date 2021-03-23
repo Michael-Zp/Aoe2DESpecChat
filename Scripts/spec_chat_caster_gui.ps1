@@ -3,6 +3,18 @@
 . "$PSScriptRoot/spec_chat_common.ps1"
 
 
+$Global:gameRootPath = Get-GameRootPath
+
+if($Global:gameRootPath -eq "" -and $release -eq $false)
+{
+    $Global:gameRootPath = "H:\SteamLibrary\steamapps\common\AoE2DE" # This is for my pc if I want to test stuff, if any other person wants to work on this in debug mode they have to change this. Sorry. Vulpes / Michael-Zp
+}
+
+$programPart = [ProgramPartNames]::CasterGUI
+$newStatus = [Status]::Running
+
+Set-Status $Global:gameRootPath $programPart $newStatus
+
 
 #-------------------------------------------------------------#
 #----Initial Declarations-------------------------------------#
@@ -191,6 +203,13 @@ $Window.Add_KeyDown({
             Update-Chat
         }
     } 
+})
+
+$Window.Add_Closing({
+    $programPart = [ProgramPartNames]::CasterGUI
+    $newStatus = [Status]::Stopped
+
+    Set-Status $Global:gameRootPath $programPart $newStatus
 })
 
 $lbChat.Add_MouseDown({$Window.DragMove()})

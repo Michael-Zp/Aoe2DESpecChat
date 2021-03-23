@@ -1,4 +1,132 @@
-﻿function Get-BaseDir
+﻿enum ProgramPartNames
+{
+    Player = 0
+    Caster = 1
+    CasterGUI = 2
+}
+
+enum Status
+{
+    Running = 0
+    Stopped = 1
+    Error = 2
+}
+
+function Get-GameRootPath
+{    
+    $runningPrograms = Get-Process | ? { $_.Name -eq "AoE2DE_s" }
+
+    if($runningPrograms.Count -eq 1)
+    {
+        $path = Split-Path $runningPrograms.Path
+    }
+    else
+    {
+        Write-Debug "Failed to get root path of the game, because game was not running."
+        return ""
+    }
+
+    return $path
+}
+
+function Init-StatusUI($jsonPath)
+{
+    $json = ConvertFrom-Json (Get-Content $jsonPath -Raw)
+
+    if($json.Collection.Widgets.Count -eq 1)
+    {
+        $json.Collection.Widgets += $json.Collection.Widgets[0]
+        $json.Collection.Widgets += $json.Collection.Widgets[0]
+        $json.Collection.Widgets += $json.Collection.Widgets[0]
+
+        #Copy the json tree, because duplicating the first widget will be done as a reference, so a change to
+        #any of the widgets will apply to all widgets. After the copy the references are no longer there
+        #There might be a better solution, but it is a 180 line file so it should not have any impact. Hopefully.
+        $jsonCopied = ConvertTo-Json $json -Depth 20
+        $json = ConvertFrom-Json $jsonCopied
+    
+        $json.Collection.Widgets[1].Widget.Image.xorigin = 440
+        $json.Collection.Widgets[1].Widget.Image.yorigin = 1570
+        $json.Collection.Widgets[1].Widget.Image.width = 220
+        $json.Collection.Widgets[1].Widget.Image.height = 80
+        $json.Collection.Widgets[1].Widget.StateMaterials.StateNormal.Material = "PlayerGreyGameIcon"
+    
+        $json.Collection.Widgets[2].Widget.Image.xorigin = 675
+        $json.Collection.Widgets[2].Widget.Image.yorigin = 1570
+        $json.Collection.Widgets[2].Widget.Image.width = 220
+        $json.Collection.Widgets[2].Widget.Image.height = 80
+        $json.Collection.Widgets[2].Widget.StateMaterials.StateNormal.Material = "PlayerGreyGameIcon"
+    
+        $json.Collection.Widgets[3].Widget.Image.xorigin = 970
+        $json.Collection.Widgets[3].Widget.Image.yorigin = 1570
+        $json.Collection.Widgets[3].Widget.Image.width = 330
+        $json.Collection.Widgets[3].Widget.Image.height = 80
+        $json.Collection.Widgets[3].Widget.StateMaterials.StateNormal.Material = "PlayerGreyGameIcon"
+    }
+
+    $outJson = ConvertTo-Json $json -Depth 20
+
+    $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
+    [System.IO.File]::WriteAllLines($jsonPath, $outJson, $Utf8NoBomEncoding)
+}
+
+function Get-StatusColor($status)
+{
+    switch($status)
+    {
+        ([Status]::Running) {
+            $newColor = "Green"
+        }
+        ([Status]::Stopped) {
+            $newColor = "Grey"
+        }
+        ([Status]::Error) {
+            $newColor = "Red"
+        }
+        default {
+            Write-Debug "Failed to set status of $partOfProgram to $status, because parameter status was illegal."
+            return
+        }
+    }
+    $newColor = "Player$($newColor)GameIcon"
+
+    return $newColor
+}
+
+function Set-Status($gameRootPath, $partOfProgram, $status)
+{
+    $jsonPath = "$gameRootPath/widgetui/screenmainmenu.json"
+    Init-StatusUI $jsonPath
+
+    switch($partOfProgram)
+    {
+        ([ProgramPartNames]::Player) {
+            $indexToSwitch = 1
+        }
+        ([ProgramPartNames]::Caster) {
+            $indexToSwitch = 2
+        }
+        ([ProgramPartNames]::CasterGUI) {
+            $indexToSwitch = 3
+        }
+        default {
+            Write-Debug "Failed to set status of $partOfProgram to $status, because parameter partOfProgram was illegal."
+            return
+        }
+    }
+
+    $newColor = Get-StatusColor $status
+    
+    $json = ConvertFrom-Json (Get-Content $jsonPath -Raw)
+    
+    $json.Collection.Widgets[$indexToSwitch].Widget.StateMaterials.StateNormal.Material = $newColor
+
+    $outJson = ConvertTo-Json $json -Depth 20
+    $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
+    [System.IO.File]::WriteAllLines($jsonPath, $outJson, $Utf8NoBomEncoding)
+}
+
+function Get-BaseDir
 {
     $baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
 
