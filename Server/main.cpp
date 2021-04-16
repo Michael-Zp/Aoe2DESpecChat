@@ -103,6 +103,41 @@ uint32_t getNextID()
     return nextID++;
 }
 
+enum LogType
+{
+    Messages,
+    Connections,
+    Errors
+};
+
+void log(std::string message, LogType type)
+{
+    bool shouldWriteLog =
+        type == LogType::Messages && DEBUG_MESSAGES ||
+        type == LogType::Connections && DEBUG_CONNECTIONS ||
+        type == LogType::Errors;
+
+    if(!shouldWriteLog)
+    {
+        return;
+    }
+
+    const int bufferSize = 80;
+    time_t rawtime;
+    struct tm* timeinfo;
+    char buffer[bufferSize];
+
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+    strftime(buffer, bufferSize, "./logs/%F.log", timeinfo);
+
+    FILE* logFile = fopen(buffer, "a");
+
+    fputs(message.c_str(), logFile);
+    fputs("\n", logFile);
+
+    fclose(logFile);
+}
 
 void managePlayerConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOutput, int playerConnection, bool* done)
 {
@@ -113,16 +148,18 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
     MyKey key;
     uint32_t id = getNextID();
 
-    if(DEBUG_CONNECTIONS)
-        std::cout << "Player connection with ID " << id << " created." << std::endl;
+    log("Player connection with ID" + std::to_string(id) + " created.", LogType::Connections);
+    //if(DEBUG_CONNECTIONS)
+    //    std::cout << "Player connection with ID " << id << " created." << std::endl;
 
     int notFinishedMessageSize = 0;
     while((readBytes = read(playerConnection, buf + notFinishedMessageSize, BUF_SIZE - 1 - notFinishedMessageSize)) > 0)
     {
     	buf[readBytes] = '\0';
 
-	    if(DEBUG_MESSAGES)
-	        std::cout << "Read player message: '" << buf << "' with length: " << readBytes << std::endl;
+        log("Read player message with length: " + std::to_string(readBytes), LogType::Messages);
+	    //if(DEBUG_MESSAGES)
+	    //    std::cout << "Read player message: '" << buf << "' with length: " << readBytes << std::endl;
 
         if(readBytes < sizeof(GeneralHeader))
         {
@@ -147,14 +184,16 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
 
 	        if(possibleKey)
 	        {
-		        if(DEBUG_MESSAGES)
-		            std::cout << "Read player key" << std::endl;
+                log("Read player key", LogType::Messages);
+		        //if(DEBUG_MESSAGES)
+		        //    std::cout << "Read player key" << std::endl;
 
 		        key = possibleKey.value();
 		        hasKey = true;
 
-		        if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
-		            std::cout << "Player with key: " << keyHashForDebugging(key) << " connected." << std::endl;
+                log("Player with key: " + std::to_string(keyHashForDebugging(key)) + " connected.", LogType::Connections);
+		        //if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
+		        //    std::cout << "Player with key: " << keyHashForDebugging(key) << " connected." << std::endl;
 	        }
 	        else if(hasKey)
 	        {
@@ -174,8 +213,9 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
                 outHeader->PlayerNumber = mesHeader->PlayerNumber;
                 memcpy(message.get() + sizeof(OutputMessageHeader), currentBuf + sizeof(MessageHeader), genHeader->Size - sizeof(MessageHeader));
 
-                if(DEBUG_MESSAGES)
-                    std::cout << "Adding message with lenght " << outHeader->Size << " to " << outputMessages.Messages.size() << " in the outputMessages of this connection." << std::endl;
+                log("Adding message with lenght " + std::to_string(outHeader->Size) + " to " + std::to_string(outputMessages.Messages.size()) + " in the outputMessages of this connection.", LogType::Messages);
+                //if(DEBUG_MESSAGES)
+                //    std::cout << "Adding message with lenght " << outHeader->Size << " to " << outputMessages.Messages.size() << " in the outputMessages of this connection." << std::endl;
 
 		        outputMessages.Mtx.lock();
 		        outputMessages.Messages.push_back(message);
@@ -188,13 +228,15 @@ void managePlayerConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
 	    notFinishedMessageSize = readBytes - startOfNextMessage;
 	    memcpy(buf, buf + startOfNextMessage, notFinishedMessageSize);
 
-	    if(DEBUG_MESSAGES)
-	        std::cout << "Start waiting for next player message at: " << notFinishedMessageSize << std::endl;
+        log("Start waiting for next player message at: " + std::to_string(notFinishedMessageSize), LogType::Messages);
+	    //if(DEBUG_MESSAGES)
+	    //    std::cout << "Start waiting for next player message at: " << notFinishedMessageSize << std::endl;
     }
 
 
-    if(DEBUG_CONNECTIONS)
-	    std::cout << "Closing player connection with key: " << keyHashForDebugging(key) << std::endl;
+    log("Closing player connection with key: " + std::to_string(keyHashForDebugging(key)), LogType::Connections);
+    //if(DEBUG_CONNECTIONS)
+	//    std::cout << "Closing player connection with key: " << keyHashForDebugging(key) << std::endl;
 
     close(playerConnection);
 
@@ -216,8 +258,9 @@ void casterSendLoop(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOut
         {
             OutputMessageHeader *outHeader = reinterpret_cast<OutputMessageHeader*>(outputMessages.Messages[i].get());
 
-     		if(DEBUG_MESSAGES)
-                std::cout << "Send to caster. Key: " << keyHashForDebugging(casterData.CurrentKey) << " MessageLen: " << outHeader->Size << std::endl;
+            log("Send to caster. Key: " + std::to_string(keyHashForDebugging(casterData.CurrentKey)) + " MessageLen: " + std::to_string(outHeader->Size), LogType::Messages);
+     		//if(DEBUG_MESSAGES)
+            //    std::cout << "Send to caster. Key: " << keyHashForDebugging(casterData.CurrentKey) << " MessageLen: " << outHeader->Size << std::endl;
 
             send(casterConnection, outputMessages.Messages[i].get(), outHeader->Size, 0);
         }
@@ -248,8 +291,9 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
     {
     	buf[readBytes] = '\0';
 
-	    if(DEBUG_MESSAGES)
-	        std::cout << "Read caster message: '" << buf << "' with length: " << readBytes << std::endl;
+        log("Read caster message with length: " + std::to_string(readBytes), LogType::Messages);
+	    //if(DEBUG_MESSAGES)
+	    //    std::cout << "Read caster message: '" << buf << "' with length: " << readBytes << std::endl;
 
         if(readBytes < sizeof(GeneralHeader))
         {
@@ -279,8 +323,9 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
         	        memcpy(&casterData.CurrentKey, possibleKey.value().data(), sizeof(MyKey));
                     casterData.SendMessages = 0;
 
-	                if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
-	                    std::cout << "Updated caster key to: " << keyHashForDebugging(casterData.CurrentKey) << std::endl;
+                    log("Updated caster key to: " + std::to_string(keyHashForDebugging(casterData.CurrentKey)), LogType::Connections);
+	                //if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
+	                //    std::cout << "Updated caster key to: " << keyHashForDebugging(casterData.CurrentKey) << std::endl;
                 }
                 else
                 {
@@ -289,8 +334,9 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
         	        sendThreadStarted = true;
        	            sendThread = std::thread(casterSendLoop, headerToOutput, casterConnection, std::ref(casterData));
 
-	                if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
-    		            std::cout << "Caster with key: " << keyHashForDebugging(casterData.CurrentKey) << " connected." << std::endl;
+                    log("Caster with key: " + std::to_string(keyHashForDebugging(casterData.CurrentKey)) + " connected.", LogType::Connections);
+	                //if(DEBUG_MESSAGES || DEBUG_CONNECTIONS)
+    		        //    std::cout << "Caster with key: " << keyHashForDebugging(casterData.CurrentKey) << " connected." << std::endl;
                 }
 	        }
 
@@ -300,8 +346,9 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
 	    notFinishedMessageSize = readBytes - startOfNextMessage;
 	    memcpy(buf, buf + startOfNextMessage, notFinishedMessageSize);
 
-	    if(DEBUG_MESSAGES)
-	        std::cout << "Start waiting for next caster message at: " << notFinishedMessageSize << std::endl;
+        log("Start waiting for next caster message at: " + std::to_string(notFinishedMessageSize), LogType::Messages);
+	    //if(DEBUG_MESSAGES)
+	    //    std::cout << "Start waiting for next caster message at: " << notFinishedMessageSize << std::endl;
     }
 
     if(sendThreadStarted)
@@ -310,8 +357,9 @@ void manageCasterConnection(std::shared_ptr<std::map<MyKey, OutputMessages>> hea
 	    sendThread.join();
     }
 
-    if(DEBUG_CONNECTIONS)
-    	std::cout << "Closing caster connection with key: " << keyHashForDebugging(casterData.CurrentKey) << std::endl;
+    log("Closing caster connection with key: " + std::to_string(keyHashForDebugging(casterData.CurrentKey)), LogType::Connections);
+    //if(DEBUG_CONNECTIONS)
+    //	std::cout << "Closing caster connection with key: " << keyHashForDebugging(casterData.CurrentKey) << std::endl;
 
     close(casterConnection);
 
@@ -327,8 +375,9 @@ void waitForPlayers(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOut
     {
         int playerConnection = accept(playerSocket, (struct sockaddr*)NULL, NULL);
 
-    	if(DEBUG_CONNECTIONS)
-            std::cout << "Player connected." << std::endl;
+        log("Player connected.", LogType::Connections);
+    	//if(DEBUG_CONNECTIONS)
+        //    std::cout << "Player connected." << std::endl;
 
         bool *done = new bool;
     	*done = false;
@@ -362,8 +411,9 @@ void waitForCasters(std::shared_ptr<std::map<MyKey, OutputMessages>> headerToOut
     {
         int casterConnection = accept(casterSocket, (struct sockaddr*)NULL, NULL);
 
-    	if(DEBUG_CONNECTIONS)
-            std::cout << "Caster connected." << std::endl;
+        log("Caster connected.", LogType::Connections);
+    	//if(DEBUG_CONNECTIONS)
+        //    std::cout << "Caster connected." << std::endl;
 
         bool *done = new bool;
     	*done = false;
@@ -396,15 +446,17 @@ int main()
     int casterSocket = 0, casterConnection = 0;
     if((casterSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
-        std::cout << "Error createing caster socket! Error code: " << strerror(errno) << std::endl;
+        log("Error creating caster socket! Error code" + std::string(strerror(errno)), LogType::Errors);
+        //std::cout << "Error creating caster socket! Error code: " << strerror(errno) << std::endl;
         return -1;
     }
 
     int on = 1;
     if(setsockopt(casterSocket, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
     {
-       std::cout << "Error setting socket option for caster! Error code: " << strerror(errno) << std::endl;
-       return -1;
+        log("Error setting socket option for caster! Error code: " + std::string(strerror(errno)), LogType::Errors);
+        //std::cout << "Error setting socket option for caster! Error code: " << strerror(errno) << std::endl;
+        return -1;
     }
 
     int playerSocket = 0, playerConnection = 0;
@@ -412,8 +464,9 @@ int main()
 
     if(setsockopt(playerSocket, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
     {
-       std::cout << "Error setting socket option for player! Error code: " << strerror(errno) << std::endl;
-       return -1;
+        log("Error setting socket option for player! Error code: " + std::string(strerror(errno)), LogType::Errors);
+        //std::cout << "Error setting socket option for player! Error code: " << strerror(errno) << std::endl;
+        return -1;
     }
 
 
@@ -425,13 +478,14 @@ int main()
     ipOfServer.sin_port = htons(CASTER_PORT);
     if((bind(casterSocket, (struct sockaddr*)&ipOfServer , sizeof(ipOfServer))) < 0)
     {
-        std::cout << "Error binding caster socket! Error code: " << strerror(errno) << std::endl;
+        log("Error binding caster socket! Error code: " + std::string(strerror(errno)), LogType::Errors);
+        //std::cout << "Error binding caster socket! Error code: " << strerror(errno) << std::endl;
         return -1;
     }
 
     if((listen(casterSocket, 20)) < 0)
     {
-        std::cout << "Error start listening caster socket! Error code: " << strerror(errno) << std::endl;
+        std::cout << "Error start listening caster socket! Error code: " << std::string(strerror(errno)) << std::endl;
         return -1;
     }
 
