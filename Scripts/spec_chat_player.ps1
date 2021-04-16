@@ -9,7 +9,33 @@ if($args.Count -gt 0)
 
 Write-Debug "Started with release = $release"
 
-$tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40321)
+$gameRootPath = Get-GameRootPath
+
+if($gameRootPath -eq "" -and $release -eq $false)
+{
+    $gameRootPath = "H:\SteamLibrary\steamapps\common\AoE2DE" # This is for my pc if I want to test stuff, if any other person wants to work on this in debug mode they have to change this. Sorry. Vulpes / Michael-Zp
+}
+
+$programPart = [ProgramPartNames]::Player
+$newStatus = [Status]::Running
+
+Set-Status $gameRootPath $programPart $newStatus
+
+$connected = $false
+do
+{
+    try
+    {
+        $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40321)
+        $connected = $true
+    }
+    catch
+    {
+        $connected = $false
+        Start-Sleep -Seconds 1
+    }
+
+} while(-not $connected)
 $tcpStream = $tcpConnection.GetStream()
 $binaryWriter = New-Object System.IO.BinaryWriter($tcpStream)
 
@@ -136,9 +162,13 @@ Loop-UntilEscPressOrGameClosed $release
 
 $PowerShell.Dispose()
 
-
 $binaryWriter.Close()
 $tcpConnection.Close()
+
+$programPart = [ProgramPartNames]::Player
+$newStatus = [Status]::Stopped
+
+Set-Status $gameRootPath $programPart $newStatus
 
 if($release)
 {

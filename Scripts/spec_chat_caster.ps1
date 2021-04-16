@@ -9,6 +9,18 @@ if($args.Count -gt 0)
 
 Write-Debug "Started with release = $release"
 
+$gameRootPath = Get-GameRootPath
+
+if($gameRootPath -eq "" -and $release -eq $false)
+{
+    $gameRootPath = "H:\SteamLibrary\steamapps\common\AoE2DE" # This is for my pc if I want to test stuff, if any other person wants to work on this in debug mode they have to change this. Sorry. Vulpes / Michael-Zp
+}
+
+$programPart = [ProgramPartNames]::Caster
+$newStatus = [Status]::Running
+
+Set-Status $gameRootPath $programPart $newStatus
+
 $PowerShell = [powershell]::Create()
 
 $PowerShell.Streams.Debug.Add_DataAdded({
@@ -54,7 +66,11 @@ $PowerShell.Streams.Debug.Add_DataAdded({
     }
 
     $currentMatch = Get-LatestRecPath
+
+    Write-Debug "Opening match: $currentMatch"
     
+    $names = Get-Names $currentMatch
+
     $buf = New-Object -TypeName 'byte[]' -ArgumentList (1024 * 50)
 
     $notFinishedMessageSize = 0
@@ -74,6 +90,8 @@ $PowerShell.Streams.Debug.Add_DataAdded({
             Push-Backup
 
             Update-Key $binaryWriter
+
+            $names = Get-Names $currentMatch
         }
 
         $task = $tcpStream.ReadAsync($buf, $notFinishedMessageSize, $buf.Count - $notFinishedMessageSize)
@@ -93,6 +111,8 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                 Push-Backup
 
                 Update-Key $binaryWriter
+                
+                $names = Get-Names $currentMatch
             }
         }
 
@@ -174,15 +194,50 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                 $lastMessages[$currentMessage].Text               = $messageText
                 $lastMessages[$currentMessage].Timestamp          = [int][double]::Parse((Get-Date -UFormat %s))
 
-                $lineWritten = $false
-
-                while(-not $lineWritten)
+                $numberWritten = $false
+                
+                while(-not $numberWritten)
                 {
-                    $outLine = "$($lastMessages[$currentMessage].PlayerInGameNumber)$($lastMessages[$currentMessage].Text)"
+                    $outLine = "$($lastMessages[$currentMessage].PlayerInGameNumber)"
+                    $outLine = $outLine -replace '\n',''
                     try
                     {
                         $outLine | Out-File -FilePath "$(Get-BaseDir)/currentChat.txt" -Encoding Unicode -Append
-                        $lineWritten = $true
+                        $numberWritten = $true
+                    }
+                    catch
+                    {
+                        Start-Sleep -Milliseconds (Get-Random -Minimum 70 -Maximum 120)
+                    }
+                }
+
+                $nameWritten = $false
+
+                while(-not $nameWritten)
+                {
+                    $outLine = "$($names[$lastMessages[$currentMessage].PlayerInGameNumber - 1].Name)"
+                    $outLine = $outLine -replace '\n',''
+                    try
+                    {
+                        $outLine | Out-File -FilePath "$(Get-BaseDir)/currentChat.txt" -Encoding Unicode -Append
+                        $nameWritten = $true
+                    }
+                    catch
+                    {
+                        Start-Sleep -Milliseconds (Get-Random -Minimum 70 -Maximum 120)
+                    }
+                }
+
+                $messageWritten = $false
+
+                while(-not $messageWritten)
+                {
+                    $outLine = "$($lastMessages[$currentMessage].Text)"
+                    $outLine = $outLine -replace '\n',''
+                    try
+                    {
+                        $outLine | Out-File -FilePath "$(Get-BaseDir)/currentChat.txt" -Encoding Unicode -Append
+                        $messageWritten = $true
                     }
                     catch
                     {
@@ -201,7 +256,21 @@ $PowerShell.Streams.Debug.Add_DataAdded({
     }
 })
 
-$tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
+$connected = $false
+do
+{
+    try
+    {
+        $tcpConnection = New-Object System.Net.Sockets.TcpClient("konosuba.zapto.org", 40320);
+        $connected = $true
+    }
+    catch
+    {
+        $connected = $false
+        Start-Sleep -Seconds 1
+    }
+
+} while(-not $connected)
 $tcpStream = $tcpConnection.GetStream()
 $binaryWriter = New-Object System.IO.BinaryWriter($tcpStream)
         
@@ -218,10 +287,17 @@ $Handle = $PowerShell.BeginInvoke()
 
 Loop-UntilEscPressOrGameClosed $release
 
+Write-Debug "End of loop"
+
 $PowerShell.Dispose()
 
 $binaryWriter.Close()
 $tcpConnection.Close()
+
+$programPart = [ProgramPartNames]::Caster
+$newStatus = [Status]::Stopped
+
+Set-Status $gameRootPath $programPart $newStatus
 
 if($release)
 {

@@ -1,4 +1,132 @@
-﻿function Get-BaseDir
+﻿enum ProgramPartNames
+{
+    Player = 0
+    Caster = 1
+    CasterGUI = 2
+}
+
+enum Status
+{
+    Running = 0
+    Stopped = 1
+    Error = 2
+}
+
+function Get-GameRootPath
+{    
+    $runningPrograms = Get-Process | ? { $_.Name -eq "AoE2DE_s" }
+
+    if($runningPrograms.Count -eq 1)
+    {
+        $path = Split-Path $runningPrograms.Path
+    }
+    else
+    {
+        Write-Debug "Failed to get root path of the game, because game was not running."
+        return ""
+    }
+
+    return $path
+}
+
+function Init-StatusUI($jsonPath)
+{
+    $json = ConvertFrom-Json (Get-Content $jsonPath -Raw)
+
+    if($json.Collection.Widgets.Count -eq 1)
+    {
+        $json.Collection.Widgets += $json.Collection.Widgets[0]
+        $json.Collection.Widgets += $json.Collection.Widgets[0]
+        $json.Collection.Widgets += $json.Collection.Widgets[0]
+
+        #Copy the json tree, because duplicating the first widget will be done as a reference, so a change to
+        #any of the widgets will apply to all widgets. After the copy the references are no longer there
+        #There might be a better solution, but it is a 180 line file so it should not have any impact. Hopefully.
+        $jsonCopied = ConvertTo-Json $json -Depth 20
+        $json = ConvertFrom-Json $jsonCopied
+    
+        $json.Collection.Widgets[1].Widget.Image.xorigin = 440
+        $json.Collection.Widgets[1].Widget.Image.yorigin = 1570
+        $json.Collection.Widgets[1].Widget.Image.width = 220
+        $json.Collection.Widgets[1].Widget.Image.height = 80
+        $json.Collection.Widgets[1].Widget.StateMaterials.StateNormal.Material = "PlayerGreyGameIcon"
+    
+        $json.Collection.Widgets[2].Widget.Image.xorigin = 675
+        $json.Collection.Widgets[2].Widget.Image.yorigin = 1570
+        $json.Collection.Widgets[2].Widget.Image.width = 220
+        $json.Collection.Widgets[2].Widget.Image.height = 80
+        $json.Collection.Widgets[2].Widget.StateMaterials.StateNormal.Material = "PlayerGreyGameIcon"
+    
+        $json.Collection.Widgets[3].Widget.Image.xorigin = 970
+        $json.Collection.Widgets[3].Widget.Image.yorigin = 1570
+        $json.Collection.Widgets[3].Widget.Image.width = 330
+        $json.Collection.Widgets[3].Widget.Image.height = 80
+        $json.Collection.Widgets[3].Widget.StateMaterials.StateNormal.Material = "PlayerGreyGameIcon"
+    }
+
+    $outJson = ConvertTo-Json $json -Depth 20
+
+    $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
+    [System.IO.File]::WriteAllLines($jsonPath, $outJson, $Utf8NoBomEncoding)
+}
+
+function Get-StatusColor($status)
+{
+    switch($status)
+    {
+        ([Status]::Running) {
+            $newColor = "Green"
+        }
+        ([Status]::Stopped) {
+            $newColor = "Grey"
+        }
+        ([Status]::Error) {
+            $newColor = "Red"
+        }
+        default {
+            Write-Debug "Failed to set status of $partOfProgram to $status, because parameter status was illegal."
+            return
+        }
+    }
+    $newColor = "Player$($newColor)GameIcon"
+
+    return $newColor
+}
+
+function Set-Status($gameRootPath, $partOfProgram, $status)
+{
+    $jsonPath = "$gameRootPath/widgetui/screenmainmenu.json"
+    Init-StatusUI $jsonPath
+
+    switch($partOfProgram)
+    {
+        ([ProgramPartNames]::Player) {
+            $indexToSwitch = 1
+        }
+        ([ProgramPartNames]::Caster) {
+            $indexToSwitch = 2
+        }
+        ([ProgramPartNames]::CasterGUI) {
+            $indexToSwitch = 3
+        }
+        default {
+            Write-Debug "Failed to set status of $partOfProgram to $status, because parameter partOfProgram was illegal."
+            return
+        }
+    }
+
+    $newColor = Get-StatusColor $status
+    
+    $json = ConvertFrom-Json (Get-Content $jsonPath -Raw)
+    
+    $json.Collection.Widgets[$indexToSwitch].Widget.StateMaterials.StateNormal.Material = $newColor
+
+    $outJson = ConvertTo-Json $json -Depth 20
+    $Utf8NoBomEncoding = New-Object System.Text.UTF8Encoding $False
+    [System.IO.File]::WriteAllLines($jsonPath, $outJson, $Utf8NoBomEncoding)
+}
+
+function Get-BaseDir
 {
     $baseDirectory = "$($env:APPDATA)/Aoe2DE_SpecChat"
 
@@ -35,6 +163,27 @@ function Get-LatestRecPath
     return $file
 }
 
+function Deflate-Replay
+{
+    Param(
+        $inputPath,
+        $outputPath
+    )
+    
+    Add-Type -Assembly "System.IO.Compression"
+
+    $inFileStream = [System.IO.File]::OpenRead($inputPath)
+    [void]$inFileStream.Seek(8, 'Begin')
+    $outFileStream = [System.IO.File]::OpenWrite($outputPath)
+    $deflateStream = New-Object System.IO.Compression.DeflateStream($inFileStream, [System.IO.Compression.CompressionMode]::Decompress)
+    
+    $deflateStream.CopyTo($outFileStream)
+
+    $outFileStream.Close()
+    $inFileStream.Close()
+    $deflateStream.Close()
+}
+
 function Get-Key
 {
     [OutputType([char[]])]
@@ -50,16 +199,7 @@ function Get-Key
 
     Copy-Item $filePath $inputPath
 
-    $inFileStream = [System.IO.File]::OpenRead($inputPath)
-    [void]$inFileStream.Seek(8, 'Begin')
-    $outFileStream = [System.IO.File]::OpenWrite($outputPath)
-    $deflateStream = New-Object System.IO.Compression.DeflateStream($inFileStream, [System.IO.Compression.CompressionMode]::Decompress)
-    
-    $deflateStream.CopyTo($outFileStream)
-
-    $outFileStream.Close()
-    $inFileStream.Close()
-    $deflateStream.Close()
+    Deflate-Replay $inputPath $outputPath
 
     Remove-Item $inputPath
 
@@ -118,6 +258,87 @@ function Update-Key
     $binaryWriter.Flush()
 }
 
+function Get-Names
+{
+    Param(
+        $filePath
+    )
+    
+    $inputPath = (New-TemporaryFile).FullName
+    $deflatedPath = (New-TemporaryFile).FullName
+
+    Copy-Item $filePath $inputPath
+
+    Deflate-Replay $inputPath $deflatedPath
+
+    Remove-Item $inputPath
+
+    $ret = @()
+
+    $binaryReader = [System.IO.BinaryReader]([System.IO.File]::OpenRead($filePath))
+
+    $header = New-Object -TypeName 'byte[]' -ArgumentList 2048
+
+    [void]$binaryReader.Read($header, 0, $header.Count)
+    $binaryReader.Close()
+
+    $numPlayers = $header[0x74]
+
+    Write-Host "There are $numPlayers players"
+
+    $currentIdx = 0xA3
+    $suffixLength = 0
+
+    $sectionOffsets = @(0, 5, 4)
+
+    for($i = 0; $i -lt $numPlayers; ++$i)
+    {
+        $playerNum = $header[$currentIdx] + 1
+        $currentIdx += 16 + 4 # offset of 1 rows 4 columns in any hex editor
+
+        $sections = @()
+        $sections += [PScustomObject]@{
+            Start = $currentIdx
+            Length = 0
+            String = ""
+        }
+
+        for($k = 0; $k -lt 3; ++$k)
+        {
+            $nextStart = $sections[$k].Start + $sectionOffsets[$k] + $sections[$k].Length
+            $nextLength = $header[$nextStart + 2]
+            $nextString = [System.Text.Encoding]::UTF8.GetString($header, $nextStart + 4, $nextLength)
+            
+            $sections += [PSCustomObject]@{
+                Start = $nextStart
+                Length = $nextLength
+                String = $nextString
+            }
+        }
+        
+        if($sections[1].Length -gt 0)
+        {
+            $ret += [PSCustomObject]@{
+                Number = $playerNum
+                Name = $sections[2].String
+            }
+        }
+        else
+        {
+            $ret += [PSCustomObject]@{
+                Number = $playerNum
+                Name = $sections[3].String
+            }
+        }
+        
+        $currentIdx = $sections[3].Start + $sections[3].Length + 16 + 16 + 2 # offset of 2 rows 2 columns in any hex editor
+
+        Write-Host "Player $playerNum is called $playerName"
+    }
+
+    return $ret | Sort-Object Number
+}
+
 function Loop-UntilEscPressOrGameClosed
 {
     Param(
@@ -145,7 +366,7 @@ function Loop-UntilEscPressOrGameClosed
                 }
             }
         }
-        elseif($breakIfGameIsClosed -and ((Get-Process | Where-Object { $_.Name -eq "AoE2DE_s" }).Count) -lt 1)
+        elseif($release -and ((Get-Process | Where-Object { $_.Name -eq "AoE2DE_s" }).Count) -lt 1)
         {
             break;
         }

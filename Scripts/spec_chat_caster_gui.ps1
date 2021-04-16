@@ -3,6 +3,18 @@
 . "$PSScriptRoot/spec_chat_common.ps1"
 
 
+$Global:gameRootPath = Get-GameRootPath
+
+if($Global:gameRootPath -eq "" -and $release -eq $false)
+{
+    $Global:gameRootPath = "H:\SteamLibrary\steamapps\common\AoE2DE" # This is for my pc if I want to test stuff, if any other person wants to work on this in debug mode they have to change this. Sorry. Vulpes / Michael-Zp
+}
+
+$programPart = [ProgramPartNames]::CasterGUI
+$newStatus = [Status]::Running
+
+Set-Status $Global:gameRootPath $programPart $newStatus
+
 
 #-------------------------------------------------------------#
 #----Initial Declarations-------------------------------------#
@@ -114,24 +126,15 @@ function Update-Chat()
             $contentChanged = $true
             $Global:LinesRead = 0
 
-            foreach($currentLine in $allLines)
+            for($i = 0; $i + 2 -lt $allLines.Length; $i += 3)
             {
-                $Global:LinesRead = $Global:LinesRead + 1
+                $Global:LinesRead = $Global:LinesRead + 3
 
-                $playerNumber = $currentLine[0]
+                $playerNumber = $allLines[$i + 0]
+                $playerName = $allLines[$i + 1]
+                $message = $allLines[$i + 2]
 
-                if(-not ($playerNumber -match "\d"))
-                {
-                    #If there is ever a need for system messages or similar
-                    $playerNumber = 9
-                    $chatLine = $currentLine
-                    continue
-                }
-                else
-                {
-                    $chatLine = "Player $($playerNumber): $($currentLine.Substring(1))"
-                }
-
+                $chatLine = "$($playerName): $message"
                  
                 $observableCollection.Add([PSCustomObject]@{
                     ChatLine = $chatLine
@@ -196,9 +199,17 @@ $Window.Add_KeyDown({
 
             $observableCollection.clear()
             $Global:LinesRead = 0
+
             Update-Chat
         }
     } 
+})
+
+$Window.Add_Closing({
+    $programPart = [ProgramPartNames]::CasterGUI
+    $newStatus = [Status]::Stopped
+
+    Set-Status $Global:gameRootPath $programPart $newStatus
 })
 
 $lbChat.Add_MouseDown({$Window.DragMove()})
