@@ -37,7 +37,7 @@ do
 
 } while(-not $connected)
 $tcpStream = $tcpConnection.GetStream()
-$binaryWriter = New-Object System.IO.BinaryWriter($tcpStream)
+$toServerWriter = New-Object System.IO.BinaryWriter($tcpStream)
 
 $PowerShell = [powershell]::Create()
 
@@ -57,16 +57,14 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
 
 [void]$PowerShell.AddScript({
-    Param($binaryWriter, $commonIncludePath, $pDebugPref)
+    Param($toServerWriter, $commonIncludePath, $pDebugPref)
 
     . "$commonIncludePath"
     
     $DebugPreference = $pDebugPref
 
-    $lastPositionInFile = 0
-
     $lastFileName = ""
-
+    
     while($true)
     {
         $file = Get-LatestRecPath
@@ -76,7 +74,6 @@ $PowerShell.Streams.Debug.Add_DataAdded({
         {
             if($lastFileName -ne $file)
             {
-                $lastPositionInFile = 0
                 $updateKey = $true
             }
         }
@@ -87,64 +84,45 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
         if($updateKey)
         {
-            Update-Key -BinaryWriter $binaryWriter
+            $metaData = Get-ReadCommandMetaData -FilePath $file
+            Update-Key -BinaryWriter $toServerWriter
         }
 
         $lastFileName = $file
 
         if($file -ne "" -and (Test-Path $file))
-        {    
-            $tmpName = (New-TemporaryFile).FullName
-
-            Copy-Item $file $tmpName
-    
-            $streamReader = New-Object System.IO.StreamReader($tmpName)
-            $streamReader.BaseStream.Seek($lastPositionInFile, 'Begin') | Out-Null
-
-            while(($currentLine = $streamReader.ReadLine()) -ne $null)
+        {
+            ($metaData, $messages) = Read-Commands -MetaData $metaData
+            
+            foreach($message in $messages)
             {
-                if($currentLine -match '{"player"')
-                {
-                    $parts = $currentLine -split '{'
-
-                    for($i = 0; $i -lt $parts.Length; ++$i)
-                    {
-                        if($parts[$i] -match '"player":(\d+),"channel":\d+,"message":"(.*?)","messageAGP":".*?"}') 
-                        { 
-                            #$playerNumber = $Matches[1]
-                            #$line = "$playerNumber;$($Matches[2])"
-                            #$line = "$($line.Length);$line"
-
-                            $line = $Matches[2]
+                if($message.Text -match '{"player":(\d+),"channel":\d+,"message":"(.*?)","messageAGP":".*?"}') 
+                { 
+                    $text = $Matches[2]
                             
-                            $textBytes = ([System.Text.Encoding]::Unicode).GetBytes($line)
+                    $textBytes = ([System.Text.Encoding]::Unicode).GetBytes($text)
 
-                            $headerArr = New-Object -TypeName 'byte[]' -ArgumentList 4
-                            $lengthBytes = [System.BitConverter]::GetBytes($textBytes.Length + $headerArr.Count)
-                            $headerArr[0] = $lengthBytes[0]
-                            $headerArr[1] = $lengthBytes[1]
-                            $headerArr[2] = 22
-                            $headerArr[3] = $Matches[1]
+                    $headerArr = New-Object -TypeName 'byte[]' -ArgumentList 8
+                   
+                    $lengthBytes = [System.BitConverter]::GetBytes($textBytes.Length + $headerArr.Count)
+                    [System.Array]::Copy($lengthBytes, $headerArr, 2)  #Ints are converted into byte[4] and the text of one chat message should never exceed 65000 bytes. I hope
+                   
+                    $headerArr[2] = Get-MessageTypeChat
+                   
+                    $headerArr[3] = $Matches[1] #Player number is between 1-8 so one byte is enough.
+                   
+                    $timestampBytes = [System.BitConverter]::GetBytes($message.Timestamp)
+                    [System.Array]::Copy($timestampBytes, 0, $headerArr, 4, 4) #4 bytes should be enough for a game which lasts ~49 days, should be fine.
 
-                            $outArr = New-Object -TypeName 'byte[]' -ArgumentList ($textBytes.Count + $headerArr.Count)
+                    $outArr = New-Object -TypeName 'byte[]' -ArgumentList ($textBytes.Count + $headerArr.Count)
                             
-                            #Ints are converted into byte[4], but as we will never have a text longer than the range of 2 bytes and the player number is between 1-8 this will be fine
-                            
-                            [System.Array]::Copy($headerArr, $outArr, $headerArr.Count)
-                            [System.Array]::Copy($textBytes, 0, $outArr, $headerArr.Count, $textBytes.Count)
+                    [System.Array]::Copy($headerArr, $outArr, $headerArr.Count)
+                    [System.Array]::Copy($textBytes, 0, $outArr, $headerArr.Count, $textBytes.Count)
 
-                            Write-Debug "Send Line: $line from player $($outArr[3])"
-                            Write-Debug $outArr[0]
-                            $binaryWriter.Write($outArr)
-                        }
-                    }
+                    Write-Debug "Send Line $text at time $($message.Timestamp) from player $($outArr[3]) with length $($outArr[0] + $outArr[1] * 256)"
+                    $toServerWriter.Write($outArr)
                 }
             }
-            
-            $lastPositionInFile = $streamReader.BaseStream.Position
-            
-            $streamReader.Close()
-            Remove-Item $tmpName
         }
 
         Start-Sleep -Milliseconds 500
@@ -152,7 +130,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
 })
 
-[void]$PowerShell.AddArgument($binaryWriter)
+[void]$PowerShell.AddArgument($toServerWriter)
 [void]$PowerShell.AddArgument("$PSScriptRoot/spec_chat_common.ps1")
 [void]$PowerShell.AddArgument($DebugPreference)
 
@@ -161,9 +139,12 @@ $Handle = $PowerShell.BeginInvoke()
 Loop-UntilEscPressOrGameClosed $release
 
 $PowerShell.Dispose()
+$PowerShell.Stop()
 
-$binaryWriter.Close()
+$toServerWriter.Close()
 $tcpConnection.Close()
+
+Write-Debug "Player closed correctly"
 
 $programPart = [ProgramPartNames]::Player
 $newStatus = [Status]::Stopped

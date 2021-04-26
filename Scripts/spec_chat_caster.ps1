@@ -39,7 +39,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
 
 [void]$PowerShell.AddScript({
-    Param($binaryWriter, $tcpStream, $commonIncludePath, $pDebugPref)
+    Param($toServerWriter, $tcpStream, $commonIncludePath, $pDebugPref)
     
     . "$commonIncludePath"
 
@@ -65,21 +65,26 @@ $PowerShell.Streams.Debug.Add_DataAdded({
         $lastMessages += Get-DefaultMessage
     }
 
-    $currentMatch = Get-LatestRecPath
+    $currentGame = Get-LatestRecPath
 
-    Write-Debug "Opening match: $currentMatch"
+    Write-Debug "Opening match: $currentGame"
     
-    $names = Get-Names $currentMatch
+    $names = Get-Names $currentGame
 
     $buf = New-Object -TypeName 'byte[]' -ArgumentList (1024 * 50)
 
     $notFinishedMessageSize = 0
 
+    $metaData = Get-ReadCommandMetaData -FilePath $currentGame
+    $lastTimestamp = $metaData.Time
+
     while($true)
     {
-        if((Get-LatestRecPath) -ne $currentMatch)
+        Start-Sleep -Milliseconds 200
+        
+        if((Get-LatestRecPath) -ne $currentGame)
         {
-            $currentMatch = Get-LatestRecPath
+            $currentGame = Get-LatestRecPath
             
             Write-Debug "UpdateKeyFromOutside"
             for($i = 0; $i -lt $maxNumLastMessages; ++$i)
@@ -89,18 +94,38 @@ $PowerShell.Streams.Debug.Add_DataAdded({
 
             Push-Backup
 
-            Update-Key $binaryWriter
+            Update-Key $toServerWriter
 
-            $names = Get-Names $currentMatch
+            $names = Get-Names $currentGame
         }
-
+        
         $task = $tcpStream.ReadAsync($buf, $notFinishedMessageSize, $buf.Count - $notFinishedMessageSize)
 
         while (-not $task.AsyncWaitHandle.WaitOne(200))
         {
-            if((Get-LatestRecPath) -ne $currentMatch)
+            #Update timestamp on server side
+            ($metaData, $_) = Read-Commands -MetaData $metaData
+        
+            $headerArr = New-Object -TypeName 'byte[]' -ArgumentList 7
+                   
+            $headerArr[0] = $headerArr.Length
+            $headerArr[1] = 0
+
+            $headerArr[2] = Get-MessageTypeTimestamp
+
+            $timestampBytes = [System.BitConverter]::GetBytes($metaData.Time)
+            [System.Array]::Copy($timestampBytes, 0, $headerArr, 3, 4) #4 bytes should be enough for a game which lasts ~49 days, should be fine.
+        
+            if($metaData.Time -gt $lastTimestamp)
             {
-                $currentMatch = Get-LatestRecPath
+                Write-Debug "Updating caster timestamp to $($metaData.Time)"
+                $toServerWriter.Write($headerArr)
+                $lastTimestamp = $metaData.Time
+            }
+
+            if((Get-LatestRecPath) -ne $currentGame)
+            {
+                $currentGame = Get-LatestRecPath
 
                 Write-Debug "UpdateKeyFromInside"
                 for($i = 0; $i -lt $maxNumLastMessages; ++$i)
@@ -110,14 +135,14 @@ $PowerShell.Streams.Debug.Add_DataAdded({
                 
                 Push-Backup
 
-                Update-Key $binaryWriter
+                Update-Key $toServerWriter
                 
-                $names = Get-Names $currentMatch
+                $names = Get-Names $currentGame
             }
         }
 
         $readBytes = $task.GetAwaiter().GetResult()
-        
+                        
         $startOfNextMessage = 0
         $availableBytes = $readBytes
 
@@ -253,6 +278,7 @@ $PowerShell.Streams.Debug.Add_DataAdded({
         }
         
         $notFinishedMessageSize = $readBytes - $startOfNextMessage
+
     }
 })
 
@@ -272,13 +298,13 @@ do
 
 } while(-not $connected)
 $tcpStream = $tcpConnection.GetStream()
-$binaryWriter = New-Object System.IO.BinaryWriter($tcpStream)
+$toServerWriter = New-Object System.IO.BinaryWriter($tcpStream)
         
 Push-Backup
 
-Update-Key $binaryWriter
+Update-Key $toServerWriter
     
-[void]$PowerShell.AddArgument($binaryWriter)
+[void]$PowerShell.AddArgument($toServerWriter)
 [void]$PowerShell.AddArgument($tcpStream)
 [void]$PowerShell.AddArgument("$PSScriptRoot/spec_chat_common.ps1")
 [void]$PowerShell.AddArgument($DebugPreference)
@@ -287,12 +313,12 @@ $Handle = $PowerShell.BeginInvoke()
 
 Loop-UntilEscPressOrGameClosed $release
 
-Write-Debug "End of loop"
-
 $PowerShell.Dispose()
 
-$binaryWriter.Close()
+$toServerWriter.Close()
 $tcpConnection.Close()
+
+Write-Debug "Spectator closed correctly"
 
 $programPart = [ProgramPartNames]::Caster
 $newStatus = [Status]::Stopped

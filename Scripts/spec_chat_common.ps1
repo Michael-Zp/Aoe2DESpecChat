@@ -184,6 +184,21 @@ function Deflate-Replay
     $deflateStream.Close()
 }
 
+function Get-MessageTypeKey
+{
+    return 11
+}
+
+function Get-MessageTypeChat
+{
+    return 22
+}
+
+function Get-MessageTypeTimestamp
+{
+    return 33
+}
+
 function Get-Key
 {
     [OutputType([char[]])]
@@ -234,7 +249,7 @@ function Get-Key
     $headerArr = New-Object -TypeName 'byte[]' -ArgumentList 3
     $headerArr[0] = $outByteBuf.Count + $headerArr.Count
     $headerArr[1] = 0
-    $headerArr[2] = 11
+    $headerArr[2] = Get-MessageTypeKey
 
     $combinedBuf = New-Object -TypeName 'byte[]' -ArgumentList ($outByteBuf.Count + $headerArr.Count)
 
@@ -337,6 +352,126 @@ function Get-Names
     }
 
     return $ret | Sort-Object Number
+}
+
+
+function Convert-LittleEndianBytesToInt
+{
+    Param(
+        $bytes,
+        $startIndex
+    )
+
+    return [convert]::ToInt32($bytes[$startIndex + 0] * [math]::Pow(2, 0) + 
+             $bytes[$startIndex + 1] * [math]::Pow(2, 8) + 
+             $bytes[$startIndex + 2] * [math]::Pow(2, 16) + 
+             $bytes[$startIndex + 3] * [math]::Pow(2, 24))
+}
+
+
+function Get-ReadCommandMetaData
+{
+    Param(
+        [Parameter(Mandatory=$true)][String]$FilePath
+    )
+
+    return [PSCustomObject]@{
+        FilePath = $FilePath
+        Time = 0
+        CurrentPos = 0
+    }
+}
+
+
+function Read-Commands
+{
+    Param(
+        [Parameter(Mandatory=$true)][PSCustomObject]$MetaData
+    )
+    
+    $FoundMessages = @()
+    
+    $inputPath = (New-TemporaryFile).FullName
+
+    Copy-Item $MetaData.FilePath $inputPath
+
+    $binaryReader = [System.IO.BinaryReader]([System.IO.File]::OpenRead($inputPath))
+
+    $header = New-Object -TypeName 'int'
+
+    $endOfHeader = $binaryReader.ReadInt32()
+
+    if($MetaData.CurrentPos -eq 0)
+    {
+        Write-Debug "Header of $($MetaData.FilePath) ends at $endOfHeader"
+    }
+    
+    [void]$binaryReader.BaseStream.Seek($endOfHeader + 4 + 4 + 12 + 12, 'Begin')
+
+    $bufferSize = $binaryReader.BaseStream.Length - $binaryReader.BaseStream.Position - $MetaData.CurrentPos
+    $buffer = New-Object -TypeName 'byte[]' -ArgumentList $bufferSize
+
+    [void]$binaryReader.Read($buffer, 0, $bufferSize)
+    $currentIndex = 0
+
+    while($currentIndex -lt $bufferSize)
+    {
+        --$commandMax
+        #For the command structure look at 'ReplayFileFormatFindings.ods:Body commands'
+        switch($buffer[$currentIndex])
+        {
+            1 {
+                $currentIndex += 4
+                $length = Convert-LittleEndianBytesToInt -bytes $buffer -startIndex $currentIndex
+                $currentIndex += 4 + $length + 4
+            }
+
+            2 {
+                $currentIndex += 4
+                $MetaData.Time += Convert-LittleEndianBytesToInt -bytes $buffer -startIndex $currentIndex
+                $currentIndex += 4
+            }
+
+            3 {
+                $currentIndex += 16
+            }
+
+            4 {
+                $currentIndex += 8
+                $length = Convert-LittleEndianBytesToInt -bytes $buffer -startIndex $currentIndex
+                $currentIndex += 4
+                $text = [System.Text.Encoding]::UTF8.GetString($buffer, $currentIndex, $length)
+                $currentIndex += $length
+                
+                $FoundMessages += [PSCustomObject]@{
+                    Timestamp = $MetaData.Time
+                    Text = $text
+                }
+            }
+
+            0 {
+                $currentIndex += 360
+            }
+
+            default {
+                Write-Debug "Not known at $currentIndex"
+                $currentIndex = $bufferSize
+            }
+        }
+    }
+
+    $binaryReader.Close()
+
+    Remove-Item $inputPath
+
+    $MetaData.CurrentPos += $currentIndex
+
+    if($FoundMessages.Length -gt 0)
+    {
+        Write-Debug "Found $($FoundMessages.Length) messages is the replay file."
+    }
+
+    return ($MetaData, $FoundMessages)
 }
 
 function Loop-UntilEscPressOrGameClosed
